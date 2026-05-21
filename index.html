@@ -3216,15 +3216,10 @@
                 continuePipeline();
               }
 
-              // Вынесли переход к следующему шагу в отдельную подфункцию
               function continuePipeline() {
-                const shouldSave = document.getElementById(
-                  "saveToHistoryCheckbox",
-                );
-                if (shouldSave && shouldSave.checked) {
-                  saveToHistory();
-                }
-                // Переходим к следующему сотруднику в очереди
+                // Запись в историю для CSV полностью отключена, чекбокс больше не проверяется
+
+                // Переходим строго к следующему сотруднику в очереди
                 currentIndex++;
                 processNextCard();
               }
