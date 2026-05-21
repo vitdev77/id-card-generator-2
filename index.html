@@ -1,0 +1,3588 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Генератор ID-карты работника</title>
+    <link rel="icon" type="image/png" href="ico/favicon.png" />
+
+    <!-- Через интернет -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@2.0.2/dist/html2canvas-pro.min.js"></script>
+
+    <!-- Без использования интернета (раскомментировать при необходимости) -->
+    <!-- <script src="scripts/tailwindcss@4.min.js"></script>
+    <link rel="stylesheet" href="styles/cropper.min.css" />
+    <script src="scripts/cropper.min.js"></script>
+    <script src="scripts/jszip.min.js"></script>
+    <script src="scripts/html2canvas-pro.min.js"></script> -->
+
+    <style>
+      html {
+        scrollbar-gutter: stable; /* Резервирует место под скроллбар, предотвращая любые прыжки */
+      }
+      body {
+        font-family: Arial, sans-serif;
+      }
+      .preview-text {
+        font-family: Arial, sans-serif;
+      }
+
+      /* Защита фонового изображения от размытия при масштабировании карточки */
+      #cardBgImg {
+        image-rendering: -webkit-optimize-contrast !important;
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: -o-crisp-edges !important;
+        image-rendering: crisp-edges !important;
+        image-rendering: pixelated !important;
+        -ms-interpolation-mode: nearest-neighbor !important;
+      }
+
+      .text-badge {
+        display: inline-block;
+        background-color: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(2px);
+        padding: 1px 8px;
+        border-radius: 4px;
+        max-width: 90%;
+        word-break: break-word;
+      }
+      .badge-placeholder {
+        color: #94a3b8;
+      }
+
+      /* Состояние покоя подложки с эффектом 3D-выпуклости */
+      #previewCardWrapper {
+        will-change: transform;
+        transition:
+          transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+          box-shadow 0.3s ease;
+        cursor: zoom-in;
+        z-index: 10;
+
+        /* 
+          КОМБИНИРОВАННЫЙ ОБЪЕМ: 
+          1. inset 0 2px 2px... — создаёт глянцевую световую полоску-блик по верхнему краю.
+          2. inset 0 -3px 6px... — создаёт мягкое внутреннее затемнение снизу для эффекта изгиба.
+          3. Остальные строки — сложная, реалистичная внешняя тень (Ambient Occlusion).
+        */
+        box-shadow:
+          inset 0 2.5px 2px 0 rgba(255, 255, 255, 0.45),
+          inset 0 -4px 8px 0 rgba(0, 0, 0, 0.12),
+          0 4px 10px -2px rgba(15, 23, 42, 0.15),
+          0 12px 25px -5px rgba(15, 23, 42, 0.22),
+          0 25px 45px -12px rgba(15, 23, 42, 0.28);
+      }
+
+      /* Эффект ПРИ НАВЕДЕНИИ: подложка монолитно "взлетает" выше, выпуклость усиливается */
+      @media (min-width: 768px) {
+        #previewCardWrapper:hover {
+          transform: scale(1.65);
+          z-index: 50;
+          box-shadow:
+            inset 0 3px 3px 0 rgba(255, 255, 255, 0.55),
+            inset 0 -5px 10px 0 rgba(0, 0, 0, 0.15),
+            0 12px 20px -4px rgba(15, 23, 42, 0.15),
+            0 25px 50px -8px rgba(15, 23, 42, 0.3),
+            0 45px 85px -15px rgba(15, 23, 42, 0.35);
+        }
+      }
+
+      /* Внутренняя тень и мягкое скругление углов для прямоугольной ID-карты на превью */
+      #resultCard {
+        border-radius: 6px; /* <-- ДОБАВЛЕНО: Скругление углов на экране предпросмотра */
+        box-shadow:
+          inset 0 3px 6px 0 rgba(0, 0, 0, 0.09),
+          inset 0 6px 14px 0 rgba(15, 23, 42, 0.12);
+      }
+
+      @keyframes fadeInRow {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+          background-color: rgb(
+            238 242 255
+          ); /* Легкий фиолетовый подсвет при появлении */
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+          background-color: transparent;
+        }
+      }
+      .animate-fade-in-row {
+        animation: fadeInRow 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      @keyframes fadeOutRow {
+        from {
+          opacity: 1;
+          transform: scale(1);
+          background-color: rgb(
+            254 242 242
+          ); /* Мягкий красный подсвет перед исчезновением */
+        }
+        to {
+          opacity: 0;
+          transform: scale(0.95) translateY(10px);
+          background-color: rgb(254 242 242);
+          height: 0;
+          padding-top: 0;
+          padding-bottom: 0;
+        }
+      }
+      .animate-fade-out-row {
+        animation: fadeOutRow 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .history-expand-wrapper {
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden; /* Пока блок закрыт или анимируется, скроллбары полностью скрыты */
+        transition:
+          max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 0.3s ease;
+      }
+      .history-expand-wrapper.is-open {
+        max-height: 260px; /* Сбалансированная высота примерно под 4-5 строк. Дальше включится скролл */
+        opacity: 1;
+        overflow-y: auto; /* Включает вертикальную прокрутку при превышении лимита */
+      }
+
+      /* Внешний контейнер фотографии (Сбалансированная толщина и прозрачность) */
+      .avatar-container {
+        position: absolute;
+        top: 49px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 115px;
+        height: 155px;
+        box-sizing: border-box;
+        border: 1.5px solid rgba(31, 148, 211, 0.65);
+        background-color: #f1f5f9;
+        display: none;
+        z-index: 10;
+        border-radius: 10px;
+      }
+
+      /* Внутренний контейнер (Задаёт белую печатную рамку) */
+      .avatar-inner-border {
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        border: 3px solid #ffffff;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8.5px; /* Скорректировано для идеального внутреннего сопряжения углов */
+      }
+
+      /* Сама картинка внутри + защита от замыливания при увеличении карточки */
+      #avatarImg {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        image-rendering: -webkit-optimize-contrast !important;
+        image-rendering: -moz-crisp-edges !important;
+        image-rendering: crisp-edges !important;
+        image-rendering: pixelated !important;
+      }
+
+      /* Анимация плавного раскрытия панели фото без дёрганий */
+      .photo-expand-wrapper {
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        transition:
+          max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 0.2s ease,
+          margin-top 0.3s ease;
+      }
+      .photo-expand-wrapper.is-open {
+        max-height: 200px;
+        opacity: 1;
+        margin-top: 12px;
+      }
+
+      /* Контейнер для динамического SVG-силуэта строго внутри рамки Cropper */
+      .cropper-dynamic-silhouette {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none; /* Мышка кликает сквозь силуэт, не ломая маркеры Cropper.js */
+        z-index: 20; /* Поверх фото, но не мешает рамкам */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .cropper-dynamic-silhouette svg {
+        width: 85%; /* Идеальная посадка по ширине 3х4 */
+        height: 85%; /* Идеальная посадка по высоте */
+        opacity: 0.45; /* Полупрозрачность силуэта */
+      }
+
+      /* Прячем подсказку, когда пользователь навел мышь на белую подложку */
+      #previewCardWrapper:hover ~ #zoomTooltip {
+        opacity: 0 !important;
+        transform: translateY(6px);
+        transition: all 0.25s ease;
+      }
+
+      /* Прорезь для ленты бейджа с эффектом внутренней тени */
+      .badge-hole {
+        width: 50px; /* Увеличено с 42px */
+        height: 14px; /* Увеличено с 10px */
+        background-color: #cbd5e1; /* Точный цвет фона правой панели (slate-200) */
+        border-radius: 9999px; /* Идеальное скругление краев */
+        margin-top: -8px; /* Сдвигаем отверстие повыше */
+        margin-bottom: 16px; /* Увеличенный зазор до карточки */
+        box-shadow:
+          inset 0 3px 5px 0 rgba(15, 23, 42, 0.3),
+          inset 0 1px 2px 0 rgba(15, 23, 42, 0.2);
+      }
+
+      /* Жесткое подавление активности кнопки демо-заполнения при блокировке */
+      #demoFillBtn:disabled,
+      #demoGroupWrapper[style*="pointer-events: none"] button {
+        opacity: 0.3 !important;
+        pointer-events: none !important;
+        cursor: not-allowed !important;
+        background-color: #f1f5f9 !important; /* Серый фон заблокированной кнопки */
+        border-color: transparent !important;
+      }
+
+      /* Скрытие тултипа заблокированной кнопки принудительно */
+      #demoGroupWrapper[style*="pointer-events: none"] #demoTooltip {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+      }
+
+      /* Если выбран третий таб (CSV Импорт), намертво отключаем кнопку демо-заполнения */
+      body:has(#tab3.bg-indigo-600) #demoGroupWrapper {
+        opacity: 0.3 !important;
+        pointer-events: none !important; /* Полный запрет на любые клики мыши */
+        cursor: not-allowed !important;
+      }
+
+      /* Принудительно вырезаем всплывающий тултип при активном третьем табе */
+      body:has(#tab3.bg-indigo-600) #demoTooltip {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-[#f8fafc] text-[#0f172a] min-h-screen grid grid-rows-[1fr_auto] p-4 sm:p-8 justify-items-center items-center"
+  >
+    <div
+      class="w-full max-w-5xl bg-white rounded-3xl border border-[#e2e8f0] shadow-xl overflow-hidden grid grid-cols-1 md:grid-cols-2 group/main relative"
+    >
+      <!-- ЛЕВАЯ ЧАСТЬ -->
+      <div
+        class="p-6 sm:p-10 border-b md:border-b-0 md:border-r border-[#e2e8f0] transition-opacity duration-300 group-has-[#resultCard:hover]/main:opacity-20"
+      >
+        <div class="mb-8">
+          <h1 class="text-xl font-black text-[#0f172a] tracking-tight">
+            Генератор ID-карты работника
+          </h1>
+          <p class="text-sm text-[#64748b] mt-1.5">
+            Заполните данные для мгновенной генерации ID-карты
+          </p>
+        </div>
+
+        <div class="bg-[#f1f5f9] p-1 rounded-xl flex gap-1 mb-6" role="tablist">
+          <button
+            id="tab1"
+            class="flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-sm transition-all cursor-pointer"
+            onclick="switchTab(1)"
+          >
+            ФИО полностью
+          </button>
+          <button
+            id="tab2"
+            class="flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg text-slate-600 hover:bg-slate-200 transition-all cursor-pointer"
+            onclick="switchTab(2)"
+          >
+            Без отчества
+          </button>
+          <button
+            id="tab3"
+            class="flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg text-slate-600 hover:bg-slate-200 transition-all cursor-pointer"
+            onclick="switchTab(3)"
+          >
+            CSV Импорт
+          </button>
+
+          <!-- КНОПКА ДЕМО-ЗАПОЛНЕНИЯ (Очищена от инлайн-курсора для идеальной блокировки) -->
+          <div id="demoGroupWrapper" class="relative group/demo">
+            <button
+              type="button"
+              id="demoFillBtn"
+              onclick="generateRandomEmployee()"
+              class="h-full px-3.5 bg-white hover:bg-indigo-50 border border-transparent hover:border-indigo-100 rounded-lg transition-all flex items-center justify-center shadow-3xs select-none focus:outline-hidden hover:cursor-pointer disabled:opacity-30 disabled:pointer-events-none disabled:bg-slate-100"
+            >
+              <span
+                class="text-xl transition-transform duration-300 group-hover/demo:scale-150 inline-block"
+                >✦</span
+              >
+            </button>
+            <!-- Тултип -->
+            <div
+              id="demoTooltip"
+              class="absolute bottom-full right-0 mb-2 w-32 bg-slate-900 text-white text-[10px] p-1.5 rounded-lg opacity-0 pointer-events-none group-hover/demo:opacity-100 transition-opacity z-50 shadow-md text-center font-bold"
+            >
+              -- Демо-заполнение --
+            </div>
+          </div>
+        </div>
+
+        <form
+          id="cardForm"
+          oninput="updatePreview()"
+          class="space-y-5"
+          onsubmit="event.preventDefault()"
+        >
+          <div class="bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
+            <div class="flex items-center gap-1.5 mb-2">
+              <label
+                for="bgImage"
+                class="text-sm font-bold capitalize text-[#475569] cursor-pointer"
+              >
+                Фоновое изображение <span class="text-red-600">*</span>
+              </label>
+              <!-- ТУЛТИП -->
+              <div class="relative flex items-center group">
+                <span
+                  class="text-[11px] leading-none bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                  >?</span
+                >
+                <div
+                  class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-900 text-white text-xs p-2 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-md text-center"
+                >
+                  Загрузите изображение заднего фона. Без него кнопка скачивания
+                  будет заблокирована.
+                </div>
+              </div>
+            </div>
+            <div
+              class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+            >
+              <input
+                type="file"
+                id="bgImage"
+                accept="image/*"
+                required
+                class="block w-full text-xs text-[#64748b] file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border file:border-[#e2e8f0] file:text-xs file:font-bold file:bg-white file:text-indigo-600 hover:file:bg-indigo-50 transition-all disabled:opacity-40 cursor-pointer"
+                onchange="handleImageUpload()"
+              />
+              <button
+                type="button"
+                id="clearBgBtn"
+                class="hidden px-2.5 py-1.5 bg-white hover:bg-gray-50 text-red-600 text-[11px] font-bold rounded-lg border border-gray-300 hover:border-red-200 transition-all cursor-pointer whitespace-nowrap text-center"
+                onclick="clearBackground()"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+
+          <!-- БЛОК ЧЕКБОКСА И СКРЫТОЙ ЗАГРУЗКИ ФОТО -->
+          <div class="bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
+            <!-- Интерактивная строка чекбокса -->
+            <label
+              class="flex items-center gap-3 cursor-pointer select-none group/check"
+            >
+              <!-- Контейнер для квадрата чекбокса -->
+              <div
+                class="relative w-5 h-5 shrink-0 flex items-center justify-center"
+              >
+                <!-- Скрытый нативный инпут (peer) -->
+                <input
+                  type="checkbox"
+                  id="togglePhotoCheckbox"
+                  class="peer absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 m-0"
+                  onchange="togglePhotoUploadPanel()"
+                />
+
+                <!-- КАСТОМНЫЙ КВАДРАТ (ИСПРАВЛЕНО: жестко прописаны стили peer-checked для Tailwind v4) -->
+                <div
+                  class="absolute inset-0 bg-white border border-[#cbd5e1] rounded-md transition-all duration-200 flex items-center justify-center shadow-3xs group-hover/check:border-indigo-400 peer-checked:bg-indigo-600 peer-checked:border-indigo-600"
+                >
+                  <!-- БЕЛАЯ ВЕКТОРНАЯ ГАЛОЧКА (Скрыта по умолчанию через hidden) -->
+                  <svg
+                    id="customCheckboxCheckmark"
+                    xmlns="http://w3.org"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="3.5"
+                    stroke="currentColor"
+                    class="w-3.5 h-3.5 text-white hidden pointer-events-none"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m4.5 12.75 6 6 9-13.5"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Текст чекбокса -->
+              <span
+                class="text-sm font-bold text-[#475569] group-hover/check:text-slate-800 transition-colors pt-0.5"
+              >
+                Добавить фото сотрудника
+              </span>
+            </label>
+
+            <!-- Скрытый контейнер загрузки, который будет плавно разворачиваться -->
+            <div id="photoUploadWrapper" class="photo-expand-wrapper">
+              <!-- ИСПРАВЛЕНО: Добавлен flex-wrap и контейнер для имени файла -->
+              <div
+                class="pt-3 border-t border-slate-200/60 flex flex-col gap-3"
+              >
+                <div
+                  class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+                >
+                  <input
+                    type="file"
+                    id="employeePhoto"
+                    accept="image/*"
+                    class="block w-full text-xs text-[#64748b] file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border file:border-[#e2e8f0] file:text-xs file:font-bold file:bg-white file:text-indigo-600 hover:file:bg-indigo-50 transition-all disabled:opacity-40 cursor-pointer"
+                    onchange="handlePhotoUpload()"
+                  />
+                  <button
+                    type="button"
+                    id="clearPhotoBtn"
+                    class="hidden px-2.5 py-1.5 bg-white hover:bg-gray-50 text-red-600 text-[11px] font-bold rounded-lg border border-gray-300 hover:border-red-200 transition-all cursor-pointer whitespace-nowrap text-center"
+                    onclick="clearPhoto()"
+                  >
+                    Удалить фото
+                  </button>
+                </div>
+
+                <!-- ДОБАВЛЕНО: Индикатор имени файла или статуса -->
+                <div
+                  id="photoFileName"
+                  class="text-[11px] font-bold text-slate-400 hidden tracking-wide bg-slate-100 py-1 px-2.5 rounded-lg w-fit"
+                >
+                  <!-- Текст управляется через JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            class="flex items-center justify-between border-b border-[#f1f5f9] pb-2"
+          >
+            <span
+              class="text-xs font-bold text-[#64748b] uppercase tracking-wider"
+              >Формат ввода ФИО</span
+            >
+            <div
+              class="flex gap-2 bg-[#f1f5f9] p-0.5 rounded-lg text-xs font-bold"
+            >
+              <button
+                type="button"
+                id="modeSingleBtn"
+                class="px-2.5 py-1 rounded-md bg-white text-indigo-600 shadow-xs cursor-pointer"
+                onclick="toggleInputMode('single')"
+              >
+                Строкой
+              </button>
+              <button
+                type="button"
+                id="modeSeparateBtn"
+                class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 cursor-pointer"
+                onclick="toggleInputMode('separate')"
+              >
+                Раздельно
+              </button>
+            </div>
+          </div>
+
+          <div id="blockSingleInput">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label
+                for="fullNameInput"
+                class="text-sm font-bold capitalize text-[#475569] cursor-pointer"
+              >
+                ФИО полностью <span class="text-red-600">*</span>
+              </label>
+              <!-- ТУЛТИП -->
+              <div class="relative flex items-center group">
+                <span
+                  class="text-[11px] leading-none bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                  >?</span
+                >
+                <div
+                  class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900 text-white text-xs p-2 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-md text-center"
+                >
+                  Введите через пробел Фамилию, Имя и Отчество. Система сама
+                  распределит их по полям.
+                </div>
+              </div>
+            </div>
+            <!-- Обертка для иконки -->
+            <div class="relative flex items-center">
+              <input
+                type="text"
+                id="fullNameInput"
+                value=""
+                placeholder="Например: Иванов Иван Иванович"
+                class="w-full pl-3.5 pr-9 py-2 text-sm bg-white border border-[#cbd5e1] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-xs transition-colors"
+                oninput="handleFullIOInput()"
+              />
+              <!-- Индикатор-галочка -->
+              <span
+                id="validBadgeFull"
+                class="absolute right-3 text-emerald-500 opacity-0 scale-75 transition-all duration-200 pointer-events-none"
+              >
+                <svg
+                  xmlns="http://w3.org"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="3"
+                  stroke="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m4.5 12.75 6 6 9-13.5"
+                  />
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <div id="blockSeparateInput" class="hidden space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label
+                  for="lastName"
+                  class="block text-sm font-bold capitalize text-[#475569] mb-1.5 cursor-pointer"
+                >
+                  Фамилия <span class="text-red-600">*</span>
+                </label>
+                <div class="relative flex items-center">
+                  <input
+                    type="text"
+                    id="lastName"
+                    value=""
+                    placeholder="Иванов"
+                    class="w-full pl-3.5 pr-9 py-2 text-sm bg-white border border-[#cbd5e1] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                    oninput="handleSeparateInput()"
+                  />
+                  <!-- Галочка для Фамилии -->
+                  <span
+                    id="validBadgeLN"
+                    class="absolute right-3 text-emerald-500 opacity-0 scale-75 transition-all duration-200 pointer-events-none"
+                  >
+                    <svg
+                      xmlns="http://w3.org"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="3"
+                      stroke="currentColor"
+                      class="w-4 h-4"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="m4.5 12.75 6 6 9-13.5"
+                      />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label
+                  for="firstName"
+                  class="block text-sm font-bold capitalize text-[#475569] mb-1.5 cursor-pointer"
+                >
+                  Имя <span class="text-red-600">*</span>
+                </label>
+                <div class="relative flex items-center">
+                  <input
+                    type="text"
+                    id="firstName"
+                    value=""
+                    placeholder="Иван"
+                    class="w-full pl-3.5 pr-9 py-2 text-sm bg-white border border-[#cbd5e1] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                    oninput="handleSeparateInput()"
+                  />
+                  <!-- Галочка для Имени -->
+                  <span
+                    id="validBadgeFN"
+                    class="absolute right-3 text-emerald-500 opacity-0 scale-75 transition-all duration-200 pointer-events-none"
+                  >
+                    <svg
+                      xmlns="http://w3.org"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="3"
+                      stroke="currentColor"
+                      class="w-4 h-4"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="m4.5 12.75 6 6 9-13.5"
+                      />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div id="patronymicWrapper">
+              <label
+                for="patronymic"
+                class="block text-sm font-bold capitalize text-[#475569] mb-1.5 cursor-pointer"
+              >
+                Отчество <span class="text-red-600">*</span>
+              </label>
+              <div class="relative flex items-center">
+                <input
+                  type="text"
+                  id="patronymic"
+                  value=""
+                  placeholder="Иванович"
+                  class="w-full pl-3.5 pr-9 py-2 text-sm bg-white border border-[#cbd5e1] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                  oninput="handleSeparateInput()"
+                />
+                <!-- Галочка для Отчества -->
+                <span
+                  id="validBadgePN"
+                  class="absolute right-3 text-emerald-500 opacity-0 scale-75 transition-all duration-200 pointer-events-none"
+                >
+                  <svg
+                    xmlns="http://w3.org"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="3"
+                    stroke="currentColor"
+                    class="w-4 h-4"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m4.5 12.75 6 6 9-13.5"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- БЛОК ВЫБОРА ОТДЕЛА (ВЫПАДАЮЩИЙ СПИСОК) -->
+          <div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label
+                for="department"
+                class="text-sm font-bold capitalize text-[#475569] cursor-pointer"
+              >
+                Отдел <span class="text-red-600">*</span>
+              </label>
+              <!-- ТУЛТИП -->
+              <div class="relative flex items-center group">
+                <span
+                  class="text-[11px] leading-none bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                  >?</span
+                >
+                <div
+                  class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-900 text-white text-xs p-2 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-md text-center"
+                >
+                  Выберите название рабочего подразделения или цеха из списка.
+                </div>
+              </div>
+            </div>
+            <!-- Обертка для иконки -->
+            <div class="relative flex items-center">
+              <!-- ИСПРАВЛЕНО: Все фиксированные опции удалены, они будут генерироваться через JS -->
+              <select
+                id="department"
+                required
+                onchange="
+                  this.classList.toggle('text-slate-400', this.value === '');
+                  this.classList.toggle('text-[#0f172a]', this.value !== '');
+                  updatePreview();
+                  validateFormState();
+                "
+                class="w-full pl-3.5 pr-9 py-2 text-sm bg-white border border-[#cbd5e1] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-xs transition-colors cursor-pointer appearance-none text-slate-400"
+              >
+                <option value="" disabled selected class="text-slate-400">
+                  Выберите отдел из списка...
+                </option>
+              </select>
+
+              <!-- Стрелочка выпадающего списка -->
+              <span
+                class="absolute right-8 text-slate-400 pointer-events-none text-xs"
+                >▼</span
+              >
+
+              <!-- Индикатор-галочка -->
+              <span
+                id="validBadgeDep"
+                class="absolute right-3 text-emerald-500 opacity-0 scale-75 transition-all duration-200 pointer-events-none"
+              >
+                <svg
+                  xmlns="http://w3.org"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="3"
+                  stroke="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m4.5 12.75 6 6 9-13.5"
+                  />
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label
+                for="idNumber"
+                class="text-sm font-bold text-[#475569] cursor-pointer"
+              >
+                ID (таб. номер) <span class="text-red-600">*</span>
+              </label>
+              <!-- ТУЛТИП -->
+              <div class="relative flex items-center group">
+                <span
+                  class="text-[11px] leading-none bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                  >?</span
+                >
+                <div
+                  class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-slate-900 text-white text-xs p-2 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-md text-center"
+                >
+                  Табельный номер сотрудника. Можно вводить с лидирующими
+                  нулями. Не более 10 цифр. Буквы автоматически удаляются.
+                </div>
+              </div>
+            </div>
+            <!-- Обертка для иконки -->
+            <div class="relative flex items-center">
+              <input
+                type="text"
+                id="idNumber"
+                maxlength="10"
+                value=""
+                placeholder="Например: 123"
+                required
+                class="w-full pl-3.5 pr-9 py-2 text-sm bg-white border border-[#cbd5e1] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 tracking-wider shadow-xs transition-colors"
+              />
+              <!-- Индикатор-галочка -->
+              <span
+                id="validBadgeId"
+                class="absolute right-3 text-emerald-500 opacity-0 scale-75 transition-all duration-200 pointer-events-none"
+              >
+                <svg
+                  xmlns="http://w3.org"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="3"
+                  stroke="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m4.5 12.75 6 6 9-13.5"
+                  />
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <!-- КОМПАКТНЫЙ ВОПРОС-ИНДИКАТОР ИСТОРИИ -->
+          <div class="px-1 -mt-1 flex justify-start">
+            <label
+              class="inline-flex items-center gap-2 cursor-pointer select-none group/hist text-[11px] font-bold text-slate-400 hover:text-indigo-600 transition-colors"
+            >
+              <!-- Скрытый нативный инпут -->
+              <input
+                type="checkbox"
+                id="saveToHistoryCheckbox"
+                checked
+                class="hidden"
+                onchange="
+                  document
+                    .getElementById('histIndicatorDot')
+                    .classList.toggle('bg-indigo-500', this.checked);
+                  document
+                    .getElementById('histIndicatorDot')
+                    .classList.toggle('bg-slate-300', !this.checked);
+                  document.getElementById('histIndicatorText').innerHTML = this
+                    .checked
+                    ? 'Запоминать в истории генераций (max 10 новых)? <span class=\'text-indigo-600\'>Да</span>'
+                    : 'Запоминать в истории генераций (max 10 новых)? <span class=\'text-red-500\'>Нет</span>';
+                "
+              />
+              <!-- Микро-точка статуса -->
+              <span
+                id="histIndicatorDot"
+                class="w-1.5 h-1.5 rounded-full bg-indigo-500 transition-colors duration-200 shrink-0"
+              ></span>
+              <!-- Текст вопроса с подсвеченным ответом -->
+              <span id="histIndicatorText" class="tracking-wide"
+                >Запоминать в истории генераций (max 10 новых)?
+                <span class="text-indigo-600">Да</span></span
+              >
+            </label>
+          </div>
+
+          <div class="flex flex-col sm:flex-row items-stretch gap-3 mt-4">
+            <button
+              type="button"
+              id="submitBtn"
+              onclick="downloadCard()"
+              disabled
+              class="w-full sm:w-auto flex-1 bg-[#cbd5e1] text-[#64748b] py-3.5 px-4 rounded-xl font-bold text-sm transition-all shadow-md flex items-center justify-center text-center"
+            >
+              Заполните обязательные поля (*)
+            </button>
+            <button
+              type="button"
+              id="resetBtn"
+              onclick="resetAllFields()"
+              disabled
+              class="w-full sm:w-auto bg-gray-50 text-slate-400 border border-gray-200 py-3.5 px-6 rounded-xl font-bold text-sm transition-all whitespace-nowrap flex items-center justify-center text-center"
+            >
+              Очистить
+            </button>
+          </div>
+        </form>
+
+        <!-- БЛОК ИМПОРТА CSV (Появляется только при выборе вкладки 3) -->
+        <div
+          id="csvImportBlock"
+          class="hidden mt-5 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/80 space-y-4"
+        >
+          <div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <label
+                for="csvFileInput"
+                class="text-xs font-bold uppercase tracking-wider text-indigo-950 cursor-pointer"
+              >
+                Выберите файл данных (.csv) <span class="text-red-600">*</span>
+              </label>
+              <div class="relative flex items-center group">
+                <span
+                  class="text-[10px] leading-none bg-indigo-200 text-indigo-700 font-bold px-1.5 py-0.5 rounded-full cursor-help"
+                  >?</span
+                >
+                <div
+                  class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-900 text-white text-xs p-2 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 shadow-md text-left space-y-1"
+                >
+                  <p
+                    class="font-bold text-center border-b border-slate-700 pb-1 mb-1"
+                  >
+                    Структура CSV файла:
+                  </p>
+                  <p>Разделитель: <b>запятая</b> или <b>точка с запятой</b>.</p>
+                  <p>Колонки: <b>Фамилия, Имя, Отчество, Отдел, ID</b></p>
+                </div>
+              </div>
+            </div>
+            <input
+              type="file"
+              id="csvFileInput"
+              accept=".csv"
+              class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border file:border-indigo-200 file:text-xs file:font-bold file:bg-white file:text-indigo-600 hover:file:bg-indigo-50 transition-all cursor-pointer"
+              onchange="handleCsvFileLoad()"
+            />
+          </div>
+
+          <div class="mt-3">
+            <label
+              for="zipFileInput"
+              class="block text-xs font-bold uppercase tracking-wider text-indigo-950 mb-1.5 cursor-pointer"
+            >
+              Пакет фотографий сотрудников (.zip)
+              <span class="text-slate-400">(опционально)</span>
+            </label>
+            <input
+              type="file"
+              id="zipFileInput"
+              accept=".zip"
+              disabled
+              class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border file:border-indigo-100 file:text-xs file:font-bold file:bg-white file:text-indigo-600 hover:file:bg-indigo-50 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              onchange="handleZipFileLoad()"
+            />
+            <p
+              id="zipStatusText"
+              class="text-[10px] text-slate-400 mt-1 font-medium italic"
+            >
+              Сначала выберите CSV-файл, чтобы открыть загрузку фотографий.
+            </p>
+          </div>
+
+          <!-- Таблица предпросмотра строк CSV -->
+          <div
+            id="csvPreviewWrapper"
+            class="hidden border border-slate-200 rounded-xl bg-white overflow-hidden max-h-48 overflow-y-auto"
+          >
+            <table class="w-full text-left border-collapse text-[11px]">
+              <thead
+                class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase sticky top-0"
+              >
+                <tr>
+                  <th class="py-1.5 px-2.5 w-6 text-center">№</th>
+                  <th class="py-1.5 px-2">Сотрудник</th>
+                  <th class="py-1.5 px-2">Отдел</th>
+                  <th class="py-1.5 px-2 text-right">ID</th>
+                </tr>
+              </thead>
+              <tbody
+                id="csvPreviewTableBody"
+                class="divide-y divide-slate-100 text-slate-700"
+              >
+                <!-- Сюда JS выведет спарсенные строки -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ДОБАВЛЕНО: Блок выбора папки сохранения -->
+          <div
+            class="pt-2 border-t border-indigo-100/60 flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+          >
+            <button
+              type="button"
+              onclick="selectTargetDirectory()"
+              class="flex-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 py-2 px-3 rounded-xl font-bold text-xs shadow-3xs transition-all cursor-pointer text-center"
+            >
+              📁 Сохранить в...
+            </button>
+            <div
+              id="dirStatusText"
+              class="text-[10px] text-slate-400 font-medium italic truncate max-w-[200px]"
+            >
+              По умолчанию: папка "Загрузки"
+            </div>
+          </div>
+
+          <!-- Кнопка запуска потокового экспорта -->
+          <button
+            type="button"
+            id="startCsvBulkBtn"
+            disabled
+            onclick="runCsvBulkGeneration()"
+            class="w-full bg-slate-300 text-slate-500 py-3 px-4 rounded-xl font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2"
+          >
+            <span>Запустить генерацию (0 карт)</span>
+          </button>
+        </div>
+
+        <!-- БЛОК ИСТОРИИ ГЕНЕРАЦИЙ -->
+        <div
+          id="historyBlock"
+          class="mt-8 pt-6 border-t border-[#e2e8f0] hidden"
+        >
+          <!-- Кликабельный заголовок-кнопка для сворачивания -->
+          <div
+            class="flex items-center justify-between gap-2 flex-nowrap mb-3 select-none"
+          >
+            <button
+              type="button"
+              onclick="toggleHistoryCollapse()"
+              class="text-[11px] font-bold text-[#475569] uppercase tracking-wider truncate flex items-center gap-2 min-w-0 cursor-pointer group/title focus:outline-hidden"
+            >
+              <span>История генераций</span>
+              <!-- Обновленный супер-красивый бейдж -->
+              <span
+                id="historyCount"
+                class="inline-flex items-center gap-1 font-black normal-case tabular-nums bg-gradient-to-b from-white to-slate-50 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 shadow-2xs text-[10px] shrink-0 transition-all duration-300"
+              >
+                <span
+                  class="w-1 h-1 rounded-full bg-indigo-500 animate-pulse"
+                ></span>
+                <span id="historyCountText">0 / 10</span>
+              </span>
+              <!-- Выразительный контейнер для шеврона -->
+              <span
+                class="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 shadow-3xs flex items-center justify-center shrink-0 transition-all duration-200 group-hover/title:bg-indigo-50 group-hover/title:border-indigo-200 group-hover/title:text-indigo-600"
+              >
+                <svg
+                  id="historyChevron"
+                  xmlns="http://w3.org"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="3"
+                  stroke="currentColor"
+                  class="w-2.5 h-2.5 text-slate-500 transition-transform duration-200"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                  />
+                </svg>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="clearHistoryBtn"
+              onclick="clearHistory()"
+              class="text-[10px] font-bold text-red-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 px-2 py-1 rounded-md transition-all cursor-pointer whitespace-nowrap shrink-0 focus:outline-hidden disabled:opacity-40 disabled:pointer-events-none"
+            >
+              Очистить всю историю
+            </button>
+          </div>
+
+          <!-- Обертка таблицы, которая будет скрываться -->
+          <div
+            id="historyCollapseWrapper"
+            class="history-expand-wrapper border border-[#e2e8f0] rounded-xl bg-[#f8fafc] origin-top"
+          >
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr
+                  class="border-b border-[#e2e8f0] bg-slate-100/70 text-[10px] font-bold text-[#64748b] uppercase tracking-wider"
+                >
+                  <th class="py-2 px-3 w-8 text-center">№</th>
+                  <th class="py-2 px-3">Сотрудник</th>
+                  <th class="py-2 px-3">Отдел</th>
+                  <th class="py-2 px-3 text-right">Действие</th>
+                </tr>
+              </thead>
+              <tbody
+                id="historyTableBody"
+                class="text-xs divide-y divide-[#e2e8f0] text-[#334155]"
+              >
+                <!-- Строки генерируются динамически через JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ПРЕДПРОСМОТР -->
+      <div
+        class="bg-slate-200 p-6 sm:p-10 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-[#e2e8f0]"
+      >
+        <!-- БЕЛАЯ РАМКА ДЛЯ КАРТОЧКИ (Теперь увеличивается целиком) -->
+        <div
+          id="previewCardWrapper"
+          class="smart-card-shadow pt-8 pb-6 px-6 bg-[#7d86b9] rounded-3xl border border-slate-300 flex flex-col items-center select-none"
+        >
+          <!-- ДОБАВЛЕНО: Отверстие для ленты бейджика -->
+          <div class="badge-hole"></div>
+
+          <div
+            id="resultCard"
+            class="relative bg-white overflow-hidden"
+            style="width: 212.7px; height: 338.7px"
+          >
+            <img
+              id="cardBgImg"
+              class="absolute inset-0 w-full h-full object-cover hidden"
+              alt="Фон"
+              crossorigin="anonymous"
+            />
+            <!-- ОБНОВЛЕННЫЙ БЛОК ФОТО НА КАРТОЧКЕ -->
+            <div id="avatarContainer" class="avatar-container">
+              <div class="avatar-inner-border">
+                <img
+                  id="avatarImg"
+                  class="w-full h-full object-cover hidden"
+                  alt="Фото сотрудника"
+                  crossorigin="anonymous"
+                />
+              </div>
+            </div>
+
+            <div
+              id="textContainer"
+              class="absolute left-0 right-0 bottom-0"
+              style="height: 130px"
+            >
+              <!-- ФАМИЛИЯ: Динамическое уменьшение без переноса строки -->
+              <div
+                class="absolute left-0 right-0 text-center leading-none"
+                style="top: 5px"
+              >
+                <div
+                  id="lastNameBadge"
+                  class="text-badge badge-placeholder w-[191px] mx-auto h-[26px] p-0! overflow-hidden flex items-center justify-center"
+                >
+                  <svg width="100%" height="26" style="display: block">
+                    <text
+                      id="prevLastName"
+                      x="50%"
+                      y="19"
+                      text-anchor="middle"
+                      font-family="Arial, sans-serif"
+                      font-weight="bold"
+                      font-size="22"
+                      fill="currentColor"
+                      class="uppercase"
+                    >
+                      Фамилия
+                    </text>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- ИМЯ: Динамическое уменьшение без переноса строки -->
+              <div
+                class="absolute left-0 right-0 text-center leading-none"
+                style="top: 27px"
+              >
+                <div
+                  id="firstNameBadge"
+                  class="text-badge badge-placeholder w-[191px] mx-auto h-[22px] p-0! overflow-hidden flex items-center justify-center"
+                >
+                  <svg width="100%" height="22" style="display: block">
+                    <text
+                      id="prevFirstName"
+                      x="50%"
+                      y="16"
+                      text-anchor="middle"
+                      font-family="Arial, sans-serif"
+                      font-weight="bold"
+                      font-size="17"
+                      fill="currentColor"
+                      class="uppercase"
+                    >
+                      Имя
+                    </text>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- ОТЧЕСТВО -->
+              <div
+                id="prevPatronymicContainer"
+                class="absolute left-0 right-0 text-center leading-none"
+                style="top: 47px"
+              >
+                <span
+                  id="prevPatronymic"
+                  class="preview-text text-badge font-bold text-black uppercase"
+                  style="font-size: 14px"
+                  >Отчество</span
+                >
+              </div>
+
+              <!-- ОТДЕЛ -->
+              <div
+                class="absolute left-0 right-0 text-center leading-none"
+                style="top: 68px"
+              >
+                <span
+                  id="prevDepartment"
+                  class="preview-text text-badge text-black"
+                  style="font-size: 11px"
+                  >Участок / Отделение подразделения</span
+                >
+              </div>
+
+              <!-- ID -->
+              <div
+                class="absolute left-0 right-0 text-center leading-none"
+                style="top: 104px"
+              >
+                <span
+                  id="prevId"
+                  class="preview-text text-badge text-[#1f94d3ff]"
+                  style="font-size: 14px"
+                  ><span class="font-bold">ID:</span>
+                  <span id="prevIdValue">0000000000</span></span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ИНФОРМАЦИОННАЯ ПОДСКАЗКА: Снова всегда видима на экране -->
+        <div
+          id="zoomTooltip"
+          class="text-[11px] font-medium text-slate-400 flex items-center justify-start gap-2.5 pointer-events-none select-none mt-5 max-w-[212px] w-full transition-opacity duration-300 group-has-[#resultCard:hover]/main:opacity-0"
+        >
+          <div
+            class="w-8 h-8 bg-white rounded-full shadow-md border border-slate-200 flex items-center justify-center shrink-0"
+          >
+            <svg
+              xmlns="http://w3.org"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2.5"
+              stroke="currentColor"
+              class="w-[18px] h-[18px] text-slate-400"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.637 10.637Z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M10.5 7.5v6m-3-3h6"
+              />
+            </svg>
+          </div>
+          <span class="text-left leading-tight"
+            >Для более детального просмотра, наведите курсор на
+            изображение</span
+          >
+        </div>
+
+        <!-- ПЕРЕКЛЮЧАТЕЛЬ ЦВЕТА ПОДЛОЖКИ -->
+        <div
+          class="flex items-center gap-2 mt-4 select-none transition-opacity duration-300 group-has-[#previewCardWrapper:hover]/main:opacity-0"
+        >
+          <div class="flex flex-col gap-0">
+            <span
+              class="text-[10px] font-bold text-slate-400 uppercase tracking-wider"
+              >Фон рамки</span
+            >
+            <span class="text-[8px] text-slate-400 tracking-wider"
+              >(только для просмотра)</span
+            >
+          </div>
+
+          <div
+            class="flex gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200"
+          >
+            <!-- Белая кнопка (теперь неактивна на старте) -->
+            <button
+              type="button"
+              onclick="changePreviewBg('white')"
+              id="bgBtn-white"
+              class="w-4 h-4 rounded-full bg-white border border-slate-300 cursor-pointer transition-transform hover:scale-110 focus:outline-hidden"
+              title="Белый фон"
+            ></button>
+            <!-- Тёмно-красная кнопка -->
+            <button
+              type="button"
+              onclick="changePreviewBg('red')"
+              id="bgBtn-red"
+              class="w-4 h-4 rounded-full bg-red-800 border border-slate-300 cursor-pointer transition-transform hover:scale-110 focus:outline-hidden"
+              title="Тёмно-красный фон"
+            ></button>
+            <!-- Серо-синяя кнопка (АКТИВНА ПО УМОЛЧАНИЮ) -->
+            <button
+              type="button"
+              onclick="changePreviewBg('purple')"
+              id="bgBtn-purple"
+              class="w-4 h-4 rounded-full bg-[#7d86b9] border-2 border-white cursor-pointer transition-transform hover:scale-110 focus:outline-hidden"
+              title="Серо-синий фон"
+            ></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- СОЛИДНЫЙ ФУТЕР -->
+    <div
+      class="mt-6 w-full max-w-5xl flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] font-semibold text-slate-400/80 tracking-wide select-none pointer-events-none"
+    >
+      <span
+        class="bg-slate-200/60 text-slate-500 px-1.5 py-0.5 rounded-md text-[10px] font-bold tracking-normal"
+        >v1.3.10</span
+      >
+      <span class="text-slate-300">•</span>
+      <span>© 2026 MBY</span>
+      <span class="text-slate-300">•</span>
+      <span class="text-slate-400">All Rights Reserved</span>
+      <span class="text-slate-300">•</span>
+      <span class="text-indigo-500/80 font-bold tracking-wider"
+        >Created by 维塔利 Vitaly (design engineer)</span
+      >
+    </div>
+
+    <script>
+      let currentTab = 1;
+      let uploadedImgBase64 = "";
+      let uploadedPhotoBase64 = "";
+      let inputMode = "single";
+      // Глобальный массив для хранения распарсенных данных CSV
+      let csvParsedEmployees = [];
+      let csvPhotosObject = {}; // Сюда будем складывать { "0000000123": "data:image/png;base64,..." }
+      let customDirectoryHandle = null; // Хранит доступ к выбранной пользователем папке
+
+      // =========================================================================
+      // ГЛОБАЛЬНЫЕ НАСТРОЙКИ ПРИЛОЖЕНИЯ (ПРАВИТЬ ОТДЕЛЫ МОЖНО ТУТ)
+      // =========================================================================
+      const DEPARTMENTS_LIST = [
+        "Отдел административной деятельности",
+        "Отдел бухгалтерского учета",
+        "Отдел логистики",
+        "Отдел логистики и материалов",
+        "Отдел материально-технического снабжения",
+        "Отдел надежности и охраны труда",
+        "Отдел персонала",
+        "Отдел проектирования",
+        "Отдел стандартизации и сертификации",
+        "Отдел таможенного декларирования",
+        "Отдел технического контроля",
+        "Отдел финансов",
+        "Отдел эксплуатации",
+        "Отдел энергетика",
+        "Проектно-технический отдел",
+        "Руководство",
+        "Управление главного инженера",
+        "Управление по снабжению и комплектации оборудования",
+        "Управление по эксплуатации оборудования",
+        "Управление проектов",
+        "Управление производством",
+        "Участок кабеля",
+        "Участок конденсаторов",
+        "Участок литья под давлением",
+        "Участок магнитных уплотнителей",
+        "Участок пены (двери)",
+        "Участок пены (корпус)",
+        "Участок предварительной сборки",
+        "Участок сварки, окончательной сборки",
+        "Участок стекло",
+        "Участок упаковки",
+        "Участок эструзии, вакуумной формовки",
+        "Финансовое управление",
+        "Цех 1",
+      ];
+
+      // Функция динамической отрисовки отделов в выпадающем списке
+      function initDepartmentsSelect() {
+        const selectEl = document.getElementById("department");
+        if (!selectEl) return;
+
+        // Очищаем всё, кроме первой дефолтной строки-заглушки
+        selectEl.length = 1;
+
+        // Бежим по массиву настроек и генерируем элементы option
+        DEPARTMENTS_LIST.forEach((deptName) => {
+          const opt = document.createElement("option");
+          opt.value = deptName;
+          opt.innerText = deptName;
+          opt.className = "text-[#0f172a]"; // Принудительный темный цвет для раскрытого списка
+          selectEl.appendChild(opt);
+        });
+      }
+
+      function handlePhotoUpload() {
+        const pInput = document.getElementById("employeePhoto");
+        const f = pInput ? pInput.files : null;
+        if (!f || f.length === 0) return; // Проверяем, что файл реально выбран
+
+        // ИСПРАВЛЕНО: Запоминаем имя НАСТОЯЩЕГО файла сразу, до начала обрезки
+        window.lastSelectedPhotoName = f[0].name;
+
+        const r = new FileReader();
+        r.onload = (e) => {
+          const modal = document.getElementById("cropModal");
+          const targetImg = document.getElementById("cropImageTarget");
+          if (!modal || !targetImg) return;
+
+          targetImg.src = e.target.result;
+
+          modal.classList.remove("hidden");
+          setTimeout(() => {
+            modal.classList.add("opacity-100");
+            modal.firstElementChild.classList.remove("scale-95");
+          }, 10);
+
+          if (cropperInstance) {
+            cropperInstance.destroy();
+          }
+
+          cropperInstance = new Cropper(targetImg, {
+            aspectRatio: 115 / 155,
+            viewMode: 1,
+            autoCropArea: 0.9,
+            background: false,
+          });
+        };
+        r.readAsDataURL(f[0]); // Исправлено: читаем конкретно первый файл из массива
+      }
+
+      function clearPhoto() {
+        uploadedPhotoBase64 = "";
+        const img = document.getElementById("avatarImg");
+        const placeholder = document.getElementById("avatarPlaceholder");
+
+        img.src = "";
+        img.classList.add("hidden");
+        if (placeholder) placeholder.classList.remove("hidden");
+
+        document.getElementById("clearPhotoBtn").classList.add("hidden");
+        const pInput = document.getElementById("employeePhoto");
+        pInput.value = "";
+        pInput.disabled = false;
+        validateFormState();
+      }
+
+      // 3. Обновите вашу функцию resetAllFields(), добавив вызов clearPhoto()
+      function resetAllFields() {
+        document.getElementById("fullNameInput").value = "";
+        [
+          "lastName",
+          "firstName",
+          "patronymic",
+          "department",
+          "idNumber",
+        ].forEach((id) => (document.getElementById(id).value = ""));
+        clearBackground();
+        clearPhoto(); // <-- Интеграция очистки фото
+        toggleInputMode("single");
+        switchTab(1);
+      }
+
+      const tabsArray = [1, 2];
+
+      // Очистка от спецсимволов
+      function clean(t) {
+        return t.replace(/[^a-zA-Zа-яА-ЯёЁ\-]/g, "");
+      }
+
+      function updatePatronymicState() {
+        document
+          .getElementById("patronymicWrapper")
+          .classList.toggle("hidden", currentTab === 2);
+      }
+
+      function switchTab(t) {
+        currentTab = t;
+
+        // Подсвечиваем активную вкладку (1, 2 или 3)
+        for (let n = 1; n <= 3; n++) {
+          const b = document.getElementById("tab" + n);
+          if (b) {
+            b.className =
+              n === t
+                ? "flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-sm transition-all cursor-pointer"
+                : "flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg text-slate-600 hover:bg-slate-200 transition-all cursor-pointer";
+          }
+        }
+
+        const cardFormEl = document.getElementById("cardForm");
+        const csvBlockEl = document.getElementById("csvImportBlock");
+        const demoBtn = document.getElementById("demoFillBtn");
+        const demoWrapper = document.getElementById("demoGroupWrapper");
+
+        if (t === 3) {
+          // Включаем интерфейс CSV, прячем ручной ввод формы
+          if (cardFormEl) cardFormEl.classList.add("hidden");
+          if (csvBlockEl) csvBlockEl.classList.remove("hidden");
+
+          // БЛОКИРУЕМ кнопку демо-заполнения на третьей вкладке
+          if (demoBtn) demoBtn.disabled = true;
+
+          // Скрываем обёртку и тултип для защиты от наведения мыши
+          if (demoWrapper) {
+            demoWrapper.className = "relative opacity-30 pointer-events-none";
+          }
+        } else {
+          // Стандартные ручные режимы ФИО
+          if (cardFormEl) cardFormEl.classList.remove("hidden");
+          if (csvBlockEl) csvBlockEl.classList.add("hidden");
+
+          // РАЗБЛОКИРУЕМ кнопку демо-заполнения обратно
+          if (demoBtn) demoBtn.disabled = false;
+
+          // Возвращаем исходные стили и hover-эффекты тултипа
+          if (demoWrapper) {
+            demoWrapper.className = "relative group/demo";
+          }
+
+          updatePatronymicState();
+        }
+
+        updatePreview();
+      }
+
+      function toggleInputMode(m) {
+        inputMode = m;
+        const s = m === "single";
+        document.getElementById("modeSingleBtn").className = s
+          ? "px-2.5 py-1 rounded-md bg-white text-indigo-600 shadow-xs cursor-pointer"
+          : "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 cursor-pointer";
+        document.getElementById("modeSeparateBtn").className = !s
+          ? "px-2.5 py-1 rounded-md bg-white text-indigo-600 shadow-xs cursor-pointer"
+          : "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 cursor-pointer";
+        document
+          .getElementById("blockSingleInput")
+          .classList.toggle("hidden", !s);
+        document
+          .getElementById("blockSeparateInput")
+          .classList.toggle("hidden", s);
+        updatePatronymicState();
+        validateFormState();
+      }
+
+      function handleImageUpload() {
+        const fInput = document.getElementById("bgImage");
+        const f = fInput.files[0];
+        if (f) {
+          const r = new FileReader();
+          r.onload = (e) => {
+            uploadedImgBase64 = e.target.result;
+            const i = document.getElementById("cardBgImg");
+            i.src = uploadedImgBase64;
+            i.classList.remove("hidden");
+            document.getElementById("clearBgBtn").classList.remove("hidden");
+            fInput.disabled = true; // Блокируем инпут после успешной загрузки
+
+            // ДОБАВЛЕНО: Обновляем статус кнопки в табе CSV, если файл уже импортирован
+            if (typeof renderCsvTablePreview === "function") {
+              renderCsvTablePreview();
+            }
+
+            validateFormState();
+          };
+          r.readAsDataURL(f);
+        }
+      }
+
+      let cropperInstance = null; // Переменная для экземпляра Cropper
+
+      function handlePhotoUpload() {
+        const pInput = document.getElementById("employeePhoto");
+        const filesList = pInput ? pInput.files : null;
+
+        if (!filesList || filesList.length === 0) return;
+
+        const targetFileFile = filesList[0];
+        window.lastSelectedPhotoName = targetFileFile.name;
+
+        const r = new FileReader();
+        r.onload = (e) => {
+          const modal = document.getElementById("cropModal");
+          const targetImg = document.getElementById("cropImageTarget");
+          if (!modal || !targetImg) return;
+
+          targetImg.src = e.target.result;
+
+          modal.classList.remove("hidden");
+          setTimeout(() => {
+            modal.classList.add("opacity-100");
+            modal.firstElementChild.classList.remove("scale-95");
+          }, 10);
+
+          if (cropperInstance) {
+            cropperInstance.destroy();
+          }
+
+          cropperInstance = new Cropper(targetImg, {
+            aspectRatio: 115 / 155,
+            viewMode: 1,
+            autoCropArea: 0.9,
+            background: false,
+
+            // Встроенный хук готовности кроппера
+            ready: function () {
+              setTimeout(() => {
+                // Прямой доступ к физическому блоку рамки в памяти кроппера
+                const cropBoxElement = cropperInstance.cropBox;
+
+                if (cropBoxElement) {
+                  // Проверяем, чтобы не создать дубликат при перезапусках
+                  if (
+                    !cropBoxElement.querySelector(".cropper-dynamic-silhouette")
+                  ) {
+                    const silhouetteWrapper = document.createElement("div");
+                    silhouetteWrapper.className = "cropper-dynamic-silhouette";
+
+                    // Крупный вертикальный силуэт с расширенным по горизонтали овалом лица
+                    silhouetteWrapper.innerHTML = `
+                      <svg xmlns="http://w3.org" viewBox="0 0 100 135" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-dasharray="4 3">
+                        <!-- Контур головы (Ширина rx увеличена до 37, высота ry зафиксирована на 53) -->
+                        <ellipse cx="50" cy="54" rx="37" ry="53" />
+                        <!-- Контур шеи (Слегка раздвинут под новую ширину лица) -->
+                        <path d="M35 104 v12 M65 104 v12" />
+                        <!-- Линия плеч (Пологая, без изменений) -->
+                        <path d="M0 132 C 12 120, 24 116, 34 116 L 66 116 C 76 116, 88 120, 100 132" />
+                        <!-- Направляющая линия уровня глаз (Ориентир для зрачков) -->
+                        <line x1="5" y1="50" x2="95" y2="50" stroke-width="0.75" opacity="0.6" />
+                      </svg>
+                    `;
+
+                    // Физически добавляем элемент внутрь контейнера изменяемой рамки
+                    cropBoxElement.appendChild(silhouetteWrapper);
+                  }
+                }
+              }, 50); // Микропауза для 100% интеграции элементов в DOM
+            },
+          });
+        };
+        r.readAsDataURL(targetFileFile);
+      }
+
+      // 2. Функция закрытия модального окна без сохранения
+      function closeCropModal() {
+        const modal = document.getElementById("cropModal");
+        if (!modal) return;
+
+        // ДОБАВЛЕНО: Полностью уничтожаем кроппер и освобождаем память при закрытии окна
+        if (cropperInstance) {
+          cropperInstance.destroy();
+          cropperInstance = null;
+        }
+
+        modal.classList.remove("opacity-100");
+        modal.firstElementChild.classList.add("scale-95");
+        setTimeout(() => modal.classList.add("hidden"), 300);
+
+        const pInput = document.getElementById("employeePhoto");
+        if (pInput) pInput.value = "";
+      }
+
+      // 3. Функция генерации обрезанного Base64 изображения и вывод его на карту
+      function applyPhotoCrop() {
+        if (!cropperInstance) return;
+
+        // Высокое печатное разрешение для защиты от размытия лица на карте
+        const canvas = cropperInstance.getCroppedCanvas({
+          width: 345,
+          height: 465,
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: "high",
+        });
+
+        uploadedPhotoBase64 = canvas.toDataURL("image/png", 1.0);
+
+        const container = document.getElementById("avatarContainer");
+        const img = document.getElementById("avatarImg");
+        const pInput = document.getElementById("employeePhoto");
+
+        if (container) container.style.display = "flex";
+        if (img) {
+          img.src = uploadedPhotoBase64;
+          img.classList.remove("hidden");
+        }
+
+        if (pInput) pInput.disabled = true;
+        const clearBtn = document.getElementById("clearPhotoBtn");
+        if (clearBtn) clearBtn.classList.remove("hidden");
+
+        // ВЫВОД ИМЕНИ: Теперь здесь гарантированно будет реальное имя (например: 📁 Файл: photo_3x4.jpg)
+        const nameLabel = document.getElementById("photoFileName");
+        if (nameLabel) {
+          nameLabel.innerText = `📁 Файл: ${window.lastSelectedPhotoName || "photo.png"}`;
+          nameLabel.classList.remove("hidden");
+        }
+
+        const modal = document.getElementById("cropModal");
+        if (modal) {
+          modal.classList.remove("opacity-100");
+          modal.firstElementChild.classList.add("scale-95");
+          setTimeout(() => modal.classList.add("hidden"), 300);
+        }
+
+        validateFormState();
+      }
+
+      function clearPhoto() {
+        uploadedPhotoBase64 = "";
+        const container = document.getElementById("avatarContainer");
+        const img = document.getElementById("avatarImg");
+
+        if (container) container.style.display = "none";
+        if (img) {
+          img.src = "";
+          img.classList.add("hidden");
+        }
+
+        document.getElementById("clearPhotoBtn").classList.add("hidden");
+        const pInput = document.getElementById("employeePhoto");
+        if (pInput) {
+          pInput.value = "";
+          pInput.disabled = false;
+        }
+
+        // ДОБАВЛЕНО: Если фото удалено, но чекбокс всё ещё нажат, мы НЕ закрываем панель ввода.
+        // Но если фото чистится при общем сбросе формы (когда чекбокс будет выключен), эта логика отработает корректно.
+        const checkbox = document.getElementById("togglePhotoCheckbox");
+        if (checkbox && !checkbox.checked) {
+          document
+            .getElementById("photoUploadWrapper")
+            .classList.remove("is-open");
+        }
+
+        const nameLabel = document.getElementById("photoFileName");
+        if (nameLabel) {
+          nameLabel.innerText = "";
+          nameLabel.classList.add("hidden");
+        }
+        window.lastSelectedPhotoName = "";
+
+        validateFormState();
+      }
+
+      function clearBackground() {
+        uploadedImgBase64 = "";
+        const i = document.getElementById("cardBgImg");
+        i.src = "";
+        i.classList.add("hidden");
+        document.getElementById("clearBgBtn").classList.add("hidden");
+        const fInput = document.getElementById("bgImage");
+        fInput.value = "";
+        fInput.disabled = false; // Возвращаем доступность инпута для новой загрузки
+
+        // ДОБАВЛЕНО: Блокируем кнопку в табе CSV обратно при удалении фона
+        if (typeof renderCsvTablePreview === "function") {
+          renderCsvTablePreview();
+        }
+
+        validateFormState();
+      }
+
+      function resetAllFields() {
+        // 1. Очищаем основные текстовые поля ввода ФИО и ID
+        document.getElementById("fullNameInput").value = "";
+        ["lastName", "firstName", "patronymic", "idNumber"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        });
+
+        // 2. Сбрасываем выпадающий список "Отдел" и возвращаем ему бледный цвет плейсхолдера
+        const depSelect = document.getElementById("department");
+        if (depSelect) {
+          depSelect.value = "";
+          depSelect.classList.remove("text-[#0f172a]");
+          depSelect.classList.add("text-slate-400");
+        }
+
+        // 3. Снимаем умный чекбокс добавления фотографии и плавно сворачиваем его панель
+        const checkbox = document.getElementById("togglePhotoCheckbox");
+        if (checkbox) checkbox.checked = false;
+
+        const wrapper = document.getElementById("photoUploadWrapper");
+        if (wrapper) wrapper.classList.remove("is-open");
+
+        const checkmark = document.getElementById("customCheckboxCheckmark");
+        if (checkmark) checkmark.classList.add("hidden");
+
+        // 4. Очищаем графические слои: сбрасываем фоновый макет и фотографию сотрудника
+        clearBackground();
+        clearPhoto();
+
+        // 5. Возвращаем дефолтные настройки интерфейса (ввод строкой, первая вкладка)
+        toggleInputMode("single");
+        switchTab(1);
+
+        // 6. Сброс интерактивного вопроса истории в активное состояние "Да" по умолчанию
+        const histCheck = document.getElementById("saveToHistoryCheckbox");
+        if (histCheck) histCheck.checked = true;
+
+        const histDot = document.getElementById("histIndicatorDot");
+        if (histDot) {
+          histDot.classList.remove("bg-slate-300");
+          histDot.classList.add("bg-indigo-500");
+        }
+
+        const histText = document.getElementById("histIndicatorText");
+        if (histText) {
+          histText.innerHTML =
+            "Запоминать в истории генераций (max 10 новых)? <span class='text-indigo-600'>Да</span>";
+        }
+
+        changePreviewBg("purple");
+
+        // 7. Принудительно обновляем холст предпросмотра и пересчитываем валидность кнопок
+        updatePreview();
+      }
+
+      // Очистка текстовых полей после скачивания (сохраняя фоновое изображение)
+      function resetFieldsAfterDownload() {
+        // 1. Очищаем основные текстовые поля ввода ФИО и ID
+        document.getElementById("fullNameInput").value = "";
+        ["lastName", "firstName", "patronymic", "idNumber"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        });
+
+        // 2. Сбрасываем выпадающий список "Отдел" и возвращаем ему бледный цвет плейсхолдера
+        const depSelect = document.getElementById("department");
+        if (depSelect) {
+          depSelect.value = "";
+          depSelect.classList.remove("text-[#0f172a]");
+          depSelect.classList.add("text-slate-400");
+        }
+
+        // 3. Снимаем умный чекбокс добавления фотографии и сворачиваем его панель
+        const checkbox = document.getElementById("togglePhotoCheckbox");
+        if (checkbox) checkbox.checked = false;
+
+        const wrapper = document.getElementById("photoUploadWrapper");
+        if (wrapper) wrapper.classList.remove("is-open");
+
+        const checkmark = document.getElementById("customCheckboxCheckmark");
+        if (checkmark) checkmark.classList.add("hidden");
+
+        // 4. Очищаем только слой фотографии сотрудника (фоновый макет карты остается нетронутым)
+        clearPhoto();
+
+        // 5. Возвращаем дефолтные настройки интерфейса (ввод строкой, первая вкладка)
+        toggleInputMode("single");
+        switchTab(1);
+
+        // 6. Автоматический возврат вопроса истории в активное состояние "Да" для следующего скачивания
+        const histCheckDlg = document.getElementById("saveToHistoryCheckbox");
+        if (histCheckDlg) histCheckDlg.checked = true;
+
+        const histDotDlg = document.getElementById("histIndicatorDot");
+        if (histDotDlg) {
+          histDotDlg.classList.remove("bg-slate-300");
+          histDotDlg.classList.add("bg-indigo-500");
+        }
+
+        const histTextDlg = document.getElementById("histIndicatorText");
+        if (histTextDlg) {
+          histTextDlg.innerHTML =
+            "Запоминать в истории генераций (max 10 новых)? <span class='text-indigo-600'>Да</span>";
+        }
+
+        // 7. Обновляем холст предпросмотра и пересчитываем валидность кнопок формы
+        updatePreview();
+      }
+
+      function handleFullIOInput() {
+        const v = document
+          .getElementById("fullNameInput")
+          .value.replace(/[^a-zA-Zа-яА-ЯёЁ\-\s]/g, "");
+        document.getElementById("fullNameInput").value = v;
+
+        // Если поле ввода полностью очищено — сбрасываем внутренние поля и вкладку
+        if (v.trim() === "") {
+          document.getElementById("lastName").value = "";
+          document.getElementById("firstName").value = "";
+          document.getElementById("patronymic").value = "";
+          switchTab(1);
+          updatePreview();
+          return;
+        }
+
+        const w = v.trim().split(/\s+/);
+        const ln = clean(w[0] || "");
+        const fn = clean(w[1] || "");
+        const pn = clean(w.slice(2).join(" ") || "");
+
+        document.getElementById("lastName").value = ln;
+        document.getElementById("firstName").value = fn;
+        document.getElementById("patronymic").value = pn;
+
+        if (ln && fn) {
+          if (!pn && currentTab !== 2) switchTab(2);
+          else if (pn && currentTab === 2) switchTab(1);
+        }
+        updatePreview();
+      }
+
+      function handleSeparateInput() {
+        const ln = clean(document.getElementById("lastName").value);
+        const fn = clean(document.getElementById("firstName").value);
+        const pn = clean(document.getElementById("patronymic").value);
+        document.getElementById("lastName").value = ln;
+        document.getElementById("firstName").value = fn;
+        document.getElementById("patronymic").value = pn;
+        document.getElementById("fullNameInput").value = [ln, fn, pn]
+          .filter(Boolean)
+          .join(" ");
+        if (ln && fn) {
+          if (!pn && currentTab !== 2) switchTab(2);
+          else if (pn && currentTab === 2) switchTab(1);
+        }
+        updatePreview();
+      }
+
+      function validateFormState() {
+        const ln = document.getElementById("lastName").value.trim();
+        const fn = document.getElementById("firstName").value.trim();
+        const pn = document.getElementById("patronymic").value.trim();
+        const dep = document.getElementById("department").value.trim();
+        const idN = document.getElementById("idNumber").value.trim();
+        const okP = currentTab === 2 || pn !== "";
+
+        // Поле валидно, если оно не пустое (idN !== "") и загружен фон
+        const valid = ln && fn && okP && dep && idN !== "" && uploadedImgBase64;
+
+        const b = document.getElementById("submitBtn");
+        b.disabled = !valid;
+        b.innerText = valid
+          ? "Скачать ID-карту (PNG)"
+          : "Заполните обязательные поля (*)";
+        b.className = valid
+          ? "w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 px-4 rounded-xl font-bold text-sm shadow-md cursor-pointer flex items-center justify-center"
+          : "w-full bg-[#cbd5e1] text-[#64748b] py-3.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center";
+
+        // --- Логика блокировки кнопки "Очистить" ---
+        const rBtn = document.getElementById("resetBtn");
+        if (rBtn) {
+          // Форма считается грязной, если заполнено ХОТЬ ОДНО поле ИЛИ загружен фон
+          const isFormDirty =
+            ln ||
+            fn ||
+            pn ||
+            dep ||
+            idN ||
+            uploadedImgBase64 ||
+            uploadedPhotoBase64 ||
+            csvParsedEmployees.length > 0; // <-- Добавлено условие проверки
+
+          rBtn.disabled = !isFormDirty;
+          rBtn.className = isFormDirty
+            ? "w-full sm:w-auto bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 py-3.5 px-6 rounded-xl font-bold text-sm shadow-sm cursor-pointer whitespace-nowrap flex items-center justify-center text-center transition-all"
+            : "w-full sm:w-auto bg-gray-50 text-slate-400 border border-gray-200 py-3.5 px-6 rounded-xl font-bold text-sm whitespace-nowrap flex items-center justify-center text-center transition-all";
+        }
+
+        // --- Индикаторы галочек для каждого поля индивидуально ---
+        const bFull = document.getElementById("validBadgeFull");
+        const bDep = document.getElementById("validBadgeDep");
+        const bId = document.getElementById("validBadgeId");
+
+        // Проверяем ФИО (должно быть введено как минимум Имя и Фамилия)
+        if (bFull) {
+          const hasMinName = ln && fn;
+          bFull.classList.toggle("opacity-100", !!hasMinName);
+          bFull.classList.toggle("scale-100", !!hasMinName);
+          bFull.classList.toggle("opacity-0", !hasMinName);
+          bFull.classList.toggle("scale-75", !hasMinName);
+
+          const inputFull = document.getElementById("fullNameInput");
+          if (inputFull)
+            inputFull.classList.toggle("border-emerald-500!", !!hasMinName);
+        }
+
+        // Проверяем Отдел
+        if (bDep) {
+          const isDepValid = dep !== "";
+          bDep.classList.toggle("opacity-100", isDepValid);
+          bDep.classList.toggle("scale-100", isDepValid);
+          bDep.classList.toggle("opacity-0", !isDepValid);
+          bDep.classList.toggle("scale-75", !isDepValid);
+
+          const inputDep = document.getElementById("department");
+          if (inputDep)
+            inputDep.classList.toggle("border-emerald-500!", isDepValid);
+        }
+
+        // Проверяем Табельный номер
+        if (bId) {
+          bId.classList.toggle("opacity-100", !!idN);
+          bId.classList.toggle("scale-100", !!idN);
+          bId.classList.toggle("opacity-0", !idN);
+          bId.classList.toggle("scale-75", !idN);
+
+          const inputId = document.getElementById("idNumber");
+          if (inputId) inputId.classList.toggle("border-emerald-500!", !!idN);
+        }
+
+        // --- Индикаторы галочек для раздельных полей ввода ФИО ---
+        const bLN = document.getElementById("validBadgeLN");
+        const bFN = document.getElementById("validBadgeFN");
+        const bPN = document.getElementById("validBadgePN");
+
+        if (bLN) {
+          bLN.classList.toggle("opacity-100", !!ln);
+          bLN.classList.toggle("scale-100", !!ln);
+          bLN.classList.toggle("opacity-0", !ln);
+          bLN.classList.toggle("scale-75", !ln);
+
+          const inputLN = document.getElementById("lastName");
+          if (inputLN) inputLN.classList.toggle("border-emerald-500!", !!ln);
+        }
+
+        if (bFN) {
+          bFN.classList.toggle("opacity-100", !!fn);
+          bFN.classList.toggle("scale-100", !!fn);
+          bFN.classList.toggle("opacity-0", !fn);
+          bFN.classList.toggle("scale-75", !fn);
+
+          const inputFN = document.getElementById("firstName");
+          if (inputFN) inputFN.classList.toggle("border-emerald-500!", !!fn);
+        }
+
+        if (bPN) {
+          bPN.classList.toggle("opacity-100", !!pn);
+          bPN.classList.toggle("scale-100", !!pn);
+          bPN.classList.toggle("opacity-0", !pn);
+          bPN.classList.toggle("scale-75", !pn);
+
+          const inputPN = document.getElementById("patronymic");
+          if (inputPN) inputPN.classList.toggle("border-emerald-500!", !!pn);
+        }
+      }
+
+      function initIdMask(inputEl) {
+        inputEl.dataset.maskBound = "true";
+
+        // Фильтр при вводе: разрешаем только цифры
+        inputEl.addEventListener("input", function () {
+          let cursor = inputEl.selectionStart;
+          let originalLength = inputEl.value.length;
+
+          // Удаляем всё, кроме цифр
+          let cleanDigits = inputEl.value.replace(/\D/g, "").substring(0, 10);
+          inputEl.value = cleanDigits;
+
+          // Корректируем позицию курсора после фильтрации
+          let diff = originalLength - inputEl.value.length;
+          inputEl.setSelectionRange(cursor - diff, cursor - diff);
+          updatePreview();
+        });
+
+        // Фильтр при вставке из буфера
+        inputEl.addEventListener("paste", function (e) {
+          e.preventDefault();
+          let pastedData = (e.clipboardData || window.clipboardData).getData(
+            "text",
+          );
+          let cleanDigits = pastedData.replace(/\D/g, "").substring(0, 10);
+          inputEl.value = cleanDigits;
+          updatePreview();
+        });
+      }
+
+      // Функция генерации случайного сотрудника для быстрого теста макетов
+      function generateRandomEmployee() {
+        const lastNames = [
+          "Иванов",
+          "Петров",
+          "Сидоров",
+          "Кузнецов",
+          "Смирнов",
+          "Попов",
+          "Соколов",
+          "Новиков",
+          "Фёдоров",
+          "Волков",
+          "Алексеев",
+          "Мамин-Сибиряк",
+          "Римский-Корсаков",
+        ];
+        const firstNames = [
+          "Иван",
+          "Александр",
+          "Сергей",
+          "Дмитрий",
+          "Алексей",
+          "Андрей",
+          "Максим",
+          "Евгений",
+          "Михаил",
+          "Владимир",
+          "Никита",
+          "Артем",
+          "Даниил",
+          "Денис",
+          "Игорь",
+        ];
+        const patronymics = [
+          "Иванович",
+          "Александрович",
+          "Сергеевич",
+          "Дмитриевич",
+          "Алексеевич",
+          "Андреевич",
+          "Максимович",
+          "Евгеньевич",
+          "Михайлович",
+          "Владимирович",
+          "Николаевич",
+          "Петрович",
+        ];
+
+        // Вспомогательная функция для случайного выбора элемента из массива
+        const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+        const ln = rand(lastNames);
+        const fn = rand(firstNames);
+
+        // Рандомно решаем: будет ли сотрудник с отчеством или без (75% с отчеством)
+        const hasPatronymic = Math.random() > 0.25;
+        const pn = hasPatronymic ? rand(patronymics) : "";
+
+        // ИСПРАВЛЕНО: Берём случайное подразделение напрямую из вашего глобального массива DEPARTMENTS_LIST
+        const dep = rand(DEPARTMENTS_LIST);
+
+        // Генерируем случайный табельный номер длиной от 1 до 5 цифр
+        const idN = Math.floor(Math.random() * 99999) + 1;
+
+        // Автоматически переключаем табы в зависимости от наличия отчества
+        if (!hasPatronymic) {
+          switchTab(2); // Вкладка без отчества
+        } else {
+          switchTab(1); // Вкладка с отчеством
+        }
+
+        // Заполняем скрытые раздельные и текстовые поля формы
+        document.getElementById("lastName").value = ln;
+        document.getElementById("firstName").value = fn;
+        document.getElementById("patronymic").value = pn;
+        document.getElementById("idNumber").value = idN;
+
+        // Находим и заполняем выпадающий список отделов
+        const depSelect = document.getElementById("department");
+        if (depSelect) {
+          depSelect.value = dep;
+          // ИСПРАВЛЕНО: Принудительно меняем цвет текста с серого на сочный темный при демо-заполнении
+          depSelect.classList.remove("text-slate-400");
+          depSelect.classList.add("text-[#0f172a]");
+        }
+
+        // Синхронизируем общую строку ФИО для поля fullNameInput
+        document.getElementById("fullNameInput").value = [ln, fn, pn]
+          .filter(Boolean)
+          .join(" ");
+
+        // Запускаем перерисовку превью ID-карты и пересчитываем доступность кнопок
+        updatePreview();
+      }
+
+      function updatePreview() {
+        const ln = document.getElementById("lastName").value.trim();
+        const fn = document.getElementById("firstName").value.trim();
+        let pn =
+          currentTab === 2 ? "" : document.getElementById("patronymic").value;
+        const dep = document.getElementById("department").value;
+
+        let inputEl = document.getElementById("idNumber");
+        let idN = inputEl.value.replace(/\D/g, "");
+
+        if (!inputEl.dataset.maskBound) {
+          initIdMask(inputEl);
+        }
+
+        // 1. Обновление Фамилии в SVG-формате
+        const nodeLastName = document.getElementById("prevLastName");
+        const badgeLastName = document.getElementById("lastNameBadge");
+
+        if (nodeLastName && badgeLastName) {
+          nodeLastName.textContent = ln || "Фамилия";
+          if (!ln) {
+            badgeLastName.classList.add("badge-placeholder");
+            badgeLastName.style.color = "#94a3b8";
+            nodeLastName.removeAttribute("textLength");
+            nodeLastName.removeAttribute("lengthAdjust");
+          } else {
+            badgeLastName.classList.remove("badge-placeholder");
+            badgeLastName.style.color = "#000000";
+            if (ln.length > 10) {
+              nodeLastName.setAttribute("textLength", "180");
+              nodeLastName.setAttribute("lengthAdjust", "spacingAndGlyphs");
+            } else {
+              nodeLastName.removeAttribute("textLength");
+              nodeLastName.removeAttribute("lengthAdjust");
+            }
+          }
+        }
+
+        // 2. Новый блок: Обновление Имени в SVG-формате (идентично Фамилии)
+        const nodeFirstName = document.getElementById("prevFirstName");
+        const badgeFirstName = document.getElementById("firstNameBadge");
+
+        if (nodeFirstName && badgeFirstName) {
+          nodeFirstName.textContent = fn || "Имя";
+          if (!fn) {
+            badgeFirstName.classList.add("badge-placeholder");
+            badgeFirstName.style.color = "#94a3b8";
+            nodeFirstName.removeAttribute("textLength");
+            nodeFirstName.removeAttribute("lengthAdjust");
+          } else {
+            badgeFirstName.classList.remove("badge-placeholder");
+            badgeFirstName.style.color = "#000000";
+            // Если имя длиннее 10 символов, сжимаем его по горизонтали до 180px
+            if (fn.length > 10) {
+              nodeFirstName.setAttribute("textLength", "180");
+              nodeFirstName.setAttribute("lengthAdjust", "spacingAndGlyphs");
+            } else {
+              nodeFirstName.removeAttribute("textLength");
+              nodeFirstName.removeAttribute("lengthAdjust");
+            }
+          }
+        }
+
+        // 3. Стандартное обновление HTML-элементов для оставшихся полей
+        const upd = (id, v, placeholder) => {
+          const e = document.getElementById(id);
+          if (!e) return;
+          e.innerText = v.trim() || placeholder;
+          e.classList.toggle("badge-placeholder", !v.trim());
+        };
+
+        upd("prevPatronymic", pn, "Отчество");
+        upd("prevDepartment", dep, "Участок / Отделение подразделения");
+
+        let displayId = idN ? idN.padStart(10, "0") : "0000000000";
+        upd("prevIdValue", displayId, "0000000000");
+
+        // 4. Динамическое смещение Фамилии и Имени вниз при отсутствии отчества
+        const containerLastName = badgeLastName
+          ? badgeLastName.closest(".absolute")
+          : null;
+        const containerFirstName = badgeFirstName
+          ? badgeFirstName.closest(".absolute")
+          : null;
+        const patronymicContainer = document.getElementById(
+          "prevPatronymicContainer",
+        );
+
+        if (currentTab === 2) {
+          if (containerLastName) containerLastName.style.top = "12px";
+          if (containerFirstName) containerFirstName.style.top = "36px";
+          if (patronymicContainer) patronymicContainer.style.display = "none";
+        } else {
+          if (containerLastName) containerLastName.style.top = "5px";
+          if (containerFirstName) containerFirstName.style.top = "27px";
+          if (patronymicContainer) patronymicContainer.style.display = "block";
+        }
+
+        validateFormState();
+      }
+
+      function changePngDpi(b64, dpi) {
+        const p = b64.split(",");
+        const s = atob(p[1]);
+        const b = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+        const dpm = Math.round(dpi / 0.0254);
+        const chunk = new Uint8Array([
+          112,
+          72,
+          89,
+          115,
+          (dpm >>> 24) & 255,
+          (dpm >>> 16) & 255,
+          (dpm >>> 8) & 255,
+          dpm & 255,
+          (dpm >>> 24) & 255,
+          (dpm >>> 16) & 255,
+          (dpm >>> 8) & 255,
+          dpm & 255,
+          1,
+        ]);
+        let crc = 0xffffffff;
+        for (let i = 0; i < chunk.length; i++) {
+          let c = (crc ^ chunk[i]) & 255;
+          for (let j = 0; j < 8; j++)
+            c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+          crc = (crc >>> 8) ^ c;
+        }
+        crc = crc ^ 0xffffffff;
+        const res = new Uint8Array(b.length + 21);
+        res.set(b.subarray(0, 33), 0);
+        res.set(new Uint8Array([0, 0, 0, 9]), 33);
+        res.set(chunk, 37);
+        res.set(
+          new Uint8Array([
+            (crc >>> 24) & 255,
+            (crc >>> 16) & 255,
+            (crc >>> 8) & 255,
+            crc & 255,
+          ]),
+          50,
+        );
+        res.set(b.subarray(33), 54);
+        let out = "";
+        for (let i = 0; i < res.length; i += 65535)
+          out += String.fromCharCode.apply(null, res.subarray(i, i + 65535));
+        return p[0] + "," + btoa(out);
+      }
+
+      function downloadCard() {
+        const card = document.getElementById("resultCard");
+        const canvas = document.createElement("canvas");
+        canvas.width = 638;
+        canvas.height = 1016;
+
+        // ПРИНУДИТЕЛЬНЫЙ СБРОС УГЛОВ: Убираем скругление перед тем, как html2canvas сделает снимок
+        if (card) card.style.borderRadius = "0px";
+
+        html2canvas(card, {
+          scale: 3,
+          canvas: canvas,
+          backgroundColor: "#ffffff",
+          width: 212.7,
+          height: 338.7,
+          useCORS: true, // Оптимизировано для запуска через file:///
+          allowTaint: true, // Оптимизировано для запуска через file:///
+          logging: false, // Отключаем лишние логи в консоли
+        }).then((c) => {
+          // МОМЕНТАЛЬНЫЙ ВОЗВРАТ УГЛОВ: Возвращаем скругление на экране сразу после фиксации снимка
+          if (card) card.style.borderRadius = "6px";
+
+          // 1. Формируем ID с нулями слева
+          let rawId = document
+            .getElementById("idNumber")
+            .value.replace(/\D/g, "");
+          let paddedId = rawId.padStart(10, "0");
+
+          // Функция для приведения строк к формату "С заглавной буквы" (Иванов, Иван)
+          // Учитывает дефисы для двойных фамилий/имён (например, Мамин-Сибиряк)
+          const capitalize = (str) => {
+            if (!str) return "";
+            return str
+              .trim()
+              .toLowerCase()
+              .split("-")
+              .map((word) => {
+                return word.charAt(0).toUpperCase() + word.slice(1);
+              })
+              .join("-");
+          };
+
+          // 2. Извлекаем ФИО и сразу преобразуем регистр
+          const ln = capitalize(document.getElementById("lastName").value);
+          const fn = capitalize(document.getElementById("firstName").value);
+          const pn = capitalize(document.getElementById("patronymic").value);
+
+          // 3. Собираем имя файла
+          let filename = `ID_${paddedId}__${ln}_${fn}`;
+          if (currentTab !== 2 && pn !== "") filename += `_${pn}`;
+
+          try {
+            const finalB64 = changePngDpi(c.toDataURL("image/png", 1.0), 300);
+            const fullFileName = filename + ".png";
+
+            if (customDirectoryHandle) {
+              saveFileToCustomDirectory(finalB64, fullFileName).catch(() =>
+                fallbackBrowserDownload(finalB64, fullFileName),
+              );
+            } else {
+              fallbackBrowserDownload(finalB64, fullFileName);
+            }
+
+            // Проверяем состояние вашего ультра-компактного индикатора истории перед записью
+            const shouldSave = document.getElementById("saveToHistoryCheckbox");
+            if (shouldSave && shouldSave.checked) {
+              saveToHistory();
+            }
+
+            resetFieldsAfterDownload(); // Сбрасываем текстовые поля, оставляя фон подложки
+          } catch (e) {
+            alert(
+              "Ошибка безопасности браузера. Пожалуйста, запустите файл через Live Server (http://)",
+            );
+          }
+        });
+      }
+
+      // Функция загрузки и отображения истории из localStorage с порядковыми номерами
+      function renderHistory(shouldAnimate = false) {
+        const history = JSON.parse(localStorage.getItem("card_history")) || [];
+        const block = document.getElementById("historyBlock");
+        const tbody = document.getElementById("historyTableBody");
+        const countEl = document.getElementById("historyCount");
+        const countTextEl = document.getElementById("historyCountText");
+
+        if (!block || !tbody) return;
+
+        if (history.length === 0) {
+          block.classList.add("hidden");
+          return;
+        }
+
+        block.classList.remove("hidden");
+
+        // Динамически обновляем счетчик и его стили (лимит изменен на 10)
+        if (countEl && countTextEl) {
+          const currentCount = history.length;
+          countTextEl.innerText = `${currentCount} / 10`;
+
+          const dot = countEl.querySelector("span");
+
+          if (currentCount === 10) {
+            // Стиль при полном заполнении (Янтарный / Предупреждающий)
+            countEl.className =
+              "inline-flex items-center gap-1 font-black normal-case tabular-nums bg-gradient-to-b from-amber-50 to-amber-100/50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200 shadow-2xs text-[10px] shrink-0 transition-all duration-300";
+            if (dot) {
+              dot.className = "w-1 h-1 rounded-full bg-amber-500";
+            }
+          } else {
+            // Стандартный стиль (Индиго / Нейтральный)
+            countEl.className =
+              "inline-flex items-center gap-1 font-black normal-case tabular-nums bg-gradient-to-b from-white to-slate-50 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200 shadow-2xs text-[10px] shrink-0 transition-all duration-300";
+            if (dot) {
+              dot.className =
+                "w-1 h-1 rounded-full bg-indigo-500 animate-pulse";
+            }
+          }
+        }
+
+        // Обновляем шапку таблицы
+        const table = block.querySelector("table");
+        if (table) {
+          table.querySelector("thead").innerHTML = `
+            <tr class="border-b border-[#e2e8f0] bg-slate-100/70 text-[10px] font-bold text-[#64748b] uppercase tracking-wider">
+              <th class="py-2 px-3 w-8 text-center">№</th>
+              <th class="py-2 px-3">Сотрудник</th>
+              <th class="py-2 px-3">Отдел</th>
+              <th class="py-2 px-3 text-right">Действие</th>
+            </tr>
+          `;
+        }
+
+        tbody.innerHTML = "";
+
+        history.forEach((item, index) => {
+          const row = document.createElement("tr");
+
+          // ЭФФЕКТ: Если это первая строка и включен флаг, добавляем класс анимации появления
+          if (index === 0 && shouldAnimate) {
+            row.className =
+              "hover:bg-slate-50 transition-colors animate-fade-in-row";
+          } else {
+            row.className = "hover:bg-slate-50 transition-colors";
+          }
+
+          // Формируем полное имя для таблицы с учетом отчества
+          const fullName =
+            `${item.lastName} ${item.firstName} ${item.patronymic || ""}`.trim() ||
+            "Без имени";
+          const formattedId = item.idNumber
+            ? `(ID: ${item.idNumber.padStart(10, "0")})`
+            : "";
+
+          row.innerHTML = `
+            <td class="py-2.5 px-3 text-center font-bold text-[#64748b] bg-slate-50/50">${index + 1}</td>
+            <td class="py-2.5 px-3 font-medium">
+              <div>${fullName}</div>
+              <div class="text-[10px] text-[#64748b] tracking-wider">${formattedId}</div>
+            </td>
+            <td class="py-2.5 px-3 text-[#64748b] truncate max-w-[120px]">${item.department || "—"}</td>
+            <td class="py-2.5 px-3 text-right">
+              <div class="flex items-center justify-end gap-1.5">
+                <!-- КНОПКА ВСТАВКИ ДАННЫХ С ИКОНКОЙ RETURN -->
+                <button 
+                  type="button" 
+                  onclick="loadHistoryItem(${index})" 
+                  class="p-1 bg-white hover:bg-indigo-50 text-indigo-600 hover:text-indigo-700 border border-[#e2e8f0] hover:border-indigo-200 text-[11px] font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center justify-center w-6 h-6"
+                  title="Вставить данные в форму"
+                >
+                  <svg xmlns="http://w3.org" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                  </svg>
+                </button>
+
+                <!-- КНОПКА УДАЛЕНИЯ -->
+                <button 
+                  type="button" 
+                  onclick="deleteHistoryItem(${index})" 
+                  class="p-1 bg-white hover:bg-red-50 text-red-500 hover:text-red-600 border border-[#e2e8f0] hover:border-red-200 text-[11px] font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center justify-center w-6 h-6"
+                  title="Удалить запись"
+                >
+                  ✕
+                </button>
+              </div>
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+
+        // Проверяем и применяем состояние сворачивания блока истории
+        applyHistoryCollapseState();
+      }
+
+      // Функция сохранения новой записи при скачивании
+      function saveToHistory() {
+        const ln = document.getElementById("lastName").value.trim();
+        const fn = document.getElementById("firstName").value.trim();
+        const pn = document.getElementById("patronymic").value.trim();
+        const dep = document.getElementById("department").value.trim();
+        const idN = document.getElementById("idNumber").value.trim();
+
+        if (!ln && !fn) return; // Не сохраняем совсем пустые шаблоны
+
+        const newItem = {
+          lastName: ln,
+          firstName: fn,
+          patronymic: pn,
+          department: dep,
+          idNumber: idN,
+          tab: currentTab,
+          mode: inputMode,
+          fullName: document.getElementById("fullNameInput").value,
+          photo: uploadedPhotoBase64,
+          photoName: window.lastSelectedPhotoName || "photo.png",
+        };
+
+        let history = JSON.parse(localStorage.getItem("card_history")) || [];
+
+        // Удаляем дубликат, если такой табельный номер или ФИО уже были в истории
+        history = history.filter(
+          (item) => !(item.idNumber === idN && item.lastName === ln),
+        );
+
+        // Добавляем новую запись в начало списка
+        history.unshift(newItem);
+
+        // Ограничиваем историю 10 последними записями
+        if (history.length > 10) history.pop();
+
+        localStorage.setItem("card_history", JSON.stringify(history));
+
+        // ИЗМЕНЕНО: Передаем true, чтобы подсветить появление верхней строки
+        renderHistory(true);
+      }
+
+      // Функция восстановления данных из истории в форму
+      function loadHistoryItem(index) {
+        const history = JSON.parse(localStorage.getItem("card_history")) || [];
+        const item = history[index];
+        if (!item) return;
+
+        // 1. Восстанавливаем режимы отображения (табы ФИО и формат ввода)
+        switchTab(item.tab);
+        toggleInputMode(item.mode);
+
+        // 2. Заполняем текстовые поля ввода ФИО и табельного номера
+        document.getElementById("fullNameInput").value = item.fullName || "";
+        document.getElementById("lastName").value = item.lastName || "";
+        document.getElementById("firstName").value = item.firstName || "";
+        document.getElementById("patronymic").value = item.patronymic || "";
+        document.getElementById("idNumber").value = item.idNumber || "";
+
+        // 3. Восстанавливаем выпадающий список "Отдел" и переключаем его цвет на темный
+        const depSelect = document.getElementById("department");
+        if (depSelect) {
+          depSelect.value = item.department || "";
+          if (depSelect.value !== "") {
+            depSelect.classList.remove("text-slate-400");
+            depSelect.classList.add("text-[#0f172a]"); // Устанавливаем нативный темный цвет текста
+          } else {
+            depSelect.classList.remove("text-[#0f172a]");
+            depSelect.classList.add("text-slate-400");
+          }
+        }
+
+        // 4. Интеллектуальное восстановление состояния чекбокса и панели фотографии
+        const checkbox = document.getElementById("togglePhotoCheckbox");
+        const wrapper = document.getElementById("photoUploadWrapper");
+        const checkmark = document.getElementById("customCheckboxCheckmark");
+
+        if (checkbox) checkbox.checked = !!item.photo;
+
+        if (item.photo) {
+          // Раскрываем панель фото в форме и рисуем галочку в чекбоксе
+          if (wrapper) wrapper.classList.add("is-open");
+          if (checkmark) checkmark.classList.remove("hidden");
+
+          uploadedPhotoBase64 = item.photo;
+
+          // Выводим фото на саму ID-карту в превью
+          const container = document.getElementById("avatarContainer");
+          const img = document.getElementById("avatarImg");
+
+          if (container) container.style.display = "flex";
+          if (img) {
+            img.src = uploadedPhotoBase64;
+            img.classList.remove("hidden");
+          }
+
+          // Блокируем поле выбора нового файла и показываем кнопку удаления фото
+          const pInput = document.getElementById("employeePhoto");
+          if (pInput) pInput.disabled = true;
+
+          const clearBtn = document.getElementById("clearPhotoBtn");
+          if (clearBtn) clearBtn.classList.remove("hidden");
+
+          // Выводим информационный статус с именем файла из истории
+          const nameLabel = document.getElementById("photoFileName");
+          if (nameLabel) {
+            const savedName = item.photoName || "photo.png";
+            nameLabel.innerText = `⏳ Из истории: ${savedName}`;
+            nameLabel.classList.remove("hidden");
+          }
+        } else {
+          // Если у выбранной записи из истории фотографии не было — сворачиваем чекбокс
+          if (wrapper) wrapper.classList.remove("is-open");
+          if (checkmark) checkmark.classList.add("hidden");
+
+          // Скрываем графические слои фото на превью
+          clearPhoto();
+        }
+
+        // 5. Запускаем перерасчет превью и валидацию состояния кнопок
+        updatePreview();
+      }
+
+      function toggleManualPanel(open) {
+        const overlay = document.getElementById("manualOverlay");
+        const panel = document.getElementById("manualPanel");
+        if (!overlay || !panel) return;
+
+        if (open) {
+          overlay.classList.remove("hidden");
+          document.body.classList.add("overflow-hidden"); // Блокирует скролл
+
+          setTimeout(() => {
+            overlay.classList.add("opacity-100");
+            panel.classList.remove("translate-x-full");
+          }, 10);
+        } else {
+          overlay.classList.remove("opacity-100");
+          panel.classList.add("translate-x-full");
+          document.body.classList.remove("overflow-hidden"); // Возвращает скролл
+
+          setTimeout(() => overlay.classList.add("hidden"), 300);
+        }
+      }
+
+      // Полная очистка списка истории и сброс текущей формы с подтверждением
+      function clearHistory() {
+        if (
+          confirm(
+            "Вы уверены, что хотите полностью очистить всю историю генераций?",
+          )
+        ) {
+          localStorage.removeItem("card_history");
+          renderHistory();
+          resetAllFields(); // <-- ДОБАВЛЕНО: Сбрасывает все введенные поля формы и превью
+        }
+      }
+
+      // Удаление конкретной записи из истории с анимацией и проверкой текущей формы
+      function deleteHistoryItem(index) {
+        if (
+          !confirm("Вы действительно хотите удалить эту запись из истории?")
+        ) {
+          return;
+        }
+
+        const tbody = document.getElementById("historyTableBody");
+        if (!tbody) return;
+
+        // Находим физическую строку таблицы по её индексу
+        const row = tbody.children[index];
+
+        if (row) {
+          // Отключаем кликабельность кнопок внутри строки на время анимации
+          row.style.pointerEvents = "none";
+          // Запускаем CSS-анимацию плавного исчезновения
+          row.classList.add("animate-fade-out-row");
+        }
+
+        // Ждем завершения анимации перед тем, как перетереть данные в LocalStorage
+        setTimeout(() => {
+          let history = JSON.parse(localStorage.getItem("card_history")) || [];
+          const itemToDelete = history[index];
+
+          if (!itemToDelete) return;
+
+          // Если удаляемый сотрудник сейчас открыт в форме, очищаем поля
+          const currentFormId = document
+            .getElementById("idNumber")
+            .value.trim();
+          if (currentFormId && currentFormId === itemToDelete.idNumber) {
+            resetAllFields();
+          }
+
+          // Удаляем элемент из массива
+          history.splice(index, 1);
+
+          // Сохраняем и обновляем таблицу (скроллбар автоматически пересчитает высоту)
+          localStorage.setItem("card_history", JSON.stringify(history));
+          renderHistory();
+        }, 350); // Время должно быть чуть меньше длительности анимации (400ms)
+      }
+
+      // Функция сворачивания/разворачивания истории
+      function toggleHistoryCollapse() {
+        const wrapper = document.getElementById("historyCollapseWrapper");
+        const chevron = document.getElementById("historyChevron");
+        const clearBtn = document.getElementById("clearHistoryBtn");
+        if (!wrapper || !chevron) return;
+
+        // ИСПРАВЛЕНО: Теперь проверяем наличие класса is-open вместо hidden
+        const isOpen = wrapper.classList.contains("is-open");
+
+        if (!isOpen) {
+          // Разворачиваем блок
+          wrapper.classList.add("is-open");
+          chevron.classList.remove("-rotate-90");
+          if (clearBtn) clearBtn.disabled = false;
+          localStorage.setItem("history_collapsed", "false");
+        } else {
+          // Сворачиваем блок
+          wrapper.classList.remove("is-open");
+          chevron.classList.add("-rotate-90");
+          if (clearBtn) clearBtn.disabled = true;
+          localStorage.setItem("history_collapsed", "true");
+        }
+      }
+
+      // Функция восстановления состояния спойлера при загрузке или обновлении
+      function applyHistoryCollapseState() {
+        const wrapper = document.getElementById("historyCollapseWrapper");
+        const chevron = document.getElementById("historyChevron");
+        const clearBtn = document.getElementById("clearHistoryBtn");
+        if (!wrapper || !chevron) return;
+
+        const savedState = localStorage.getItem("history_collapsed");
+
+        if (savedState === "true") {
+          wrapper.classList.remove("is-open"); // Закрываем
+          chevron.classList.add("-rotate-90");
+          if (clearBtn) clearBtn.disabled = true;
+        } else {
+          wrapper.classList.add("is-open"); // Открываем
+          chevron.classList.remove("-rotate-90");
+          if (clearBtn) clearBtn.disabled = false;
+        }
+      }
+
+      // Инициализация при старте страницы
+      initDepartmentsSelect();
+      initIdMask(document.getElementById("idNumber"));
+      handleFullIOInput();
+      renderHistory(); // <-- ДОБАВЛЕНО: Отображаем историю из памяти при старте
+      applyHistoryCollapseState(); // <-- Добавлено для первоначальной проверки памяти
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" || e.keyCode === 27) {
+          // 1. Проверка для панели инструкции
+          const overlay = document.getElementById("manualOverlay");
+          if (overlay && !overlay.classList.contains("hidden")) {
+            toggleManualPanel(false);
+          }
+
+          // 2. ДОБАВЛЕНО: Проверка для окна обрезки
+          const cropModal = document.getElementById("cropModal");
+          if (cropModal && !cropModal.classList.contains("hidden")) {
+            closeCropModal();
+          }
+
+          if (document.activeElement) document.activeElement.blur();
+        }
+      });
+
+      // Интеллектуальные горячие клавиши для ускорения работы
+      document.addEventListener("keydown", function (e) {
+        // Проверяем, нажата ли системная клавиша модификатор (Ctrl на Windows или Cmd на Mac)
+        const isMod = e.ctrlKey || e.metaKey;
+
+        if (isMod) {
+          // 1. Ctrl + Enter -> Скачать карту (если кнопка активна)
+          if (e.key === "Enter") {
+            const submitBtn = document.getElementById("submitBtn");
+            if (submitBtn && !submitBtn.disabled) {
+              e.preventDefault();
+              downloadCard();
+            }
+          }
+
+          // 2. Ctrl + Delete (или Backspace) -> Полная очистка полей формы
+          if (e.key === "Delete" || e.key === "Backspace") {
+            const resetBtn = document.getElementById("resetBtn");
+            if (resetBtn && !resetBtn.disabled) {
+              e.preventDefault();
+              resetAllFields();
+            }
+          }
+
+          // 3. Ctrl + I -> Быстрое переключение формата ввода ФИО
+          if (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "ш") {
+            e.preventDefault();
+            const nextMode = inputMode === "single" ? "separate" : "single";
+            toggleInputMode(nextMode);
+          }
+        }
+      });
+
+      function togglePhotoUploadPanel() {
+        const checkbox = document.getElementById("togglePhotoCheckbox");
+        const wrapper = document.getElementById("photoUploadWrapper");
+        const checkmark = document.getElementById("customCheckboxCheckmark");
+
+        if (!checkbox || !wrapper || !checkmark) return;
+
+        if (checkbox.checked) {
+          // Раскрываем панель фото в форме
+          wrapper.classList.add("is-open");
+          // Показываем белую галочку
+          checkmark.classList.remove("hidden");
+        } else {
+          // Прячем панель фото
+          wrapper.classList.remove("is-open");
+          // Скрываем галочку
+          checkmark.classList.add("hidden");
+
+          // Сбрасываем фото, если панель скрыли вручную
+          if (uploadedPhotoBase64) {
+            clearPhoto();
+          }
+        }
+      }
+
+      function changePreviewBg(color) {
+        const wrapper = document.getElementById("previewCardWrapper");
+        if (!wrapper) return;
+
+        // 1. Очищаем все возможные классы фона с подложки
+        wrapper.classList.remove("bg-white", "bg-red-800", "bg-[#7d86b9]");
+
+        // 2. Устанавливаем нужный цвет в зависимости от выбора
+        if (color === "white") wrapper.classList.add("bg-white");
+        if (color === "red") wrapper.classList.add("bg-red-800");
+        if (color === "purple") wrapper.classList.add("bg-[#7d86b9]");
+
+        // 3. Обновляем рамки у кнопок-кружков для индикации активности
+        ["white", "red", "purple"].forEach((c) => {
+          const btn = document.getElementById(`bgBtn-${c}`);
+          if (!btn) return;
+
+          if (c === color) {
+            btn.classList.remove("border-slate-300", "border-white");
+            // Для белой кнопки делаем индиго рамку, для цветных — белую для контраста
+            btn.classList.add(
+              "border-2",
+              color === "white" ? "border-indigo-600" : "border-white",
+            );
+          } else {
+            btn.classList.remove(
+              "border-2",
+              "border-indigo-600",
+              "border-white",
+            );
+            btn.classList.add("border", "border-slate-300");
+          }
+        });
+      }
+
+      // Функция переключения табов (расширенная версия вашей исходной функции)
+      function switchTab(t) {
+        currentTab = t;
+        const tabsCount = [1, 2, 3];
+        tabsCount.forEach((n) => {
+          const b = document.getElementById(`tab${n}`);
+          if (!b) return;
+          b.className =
+            n === t
+              ? "flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-sm transition-all cursor-pointer"
+              : "flex-1 text-center py-2.5 px-3 text-xs font-bold rounded-lg text-slate-600 hover:bg-slate-200 transition-all cursor-pointer";
+        });
+
+        const cardFormEl = document.getElementById("cardForm");
+        const csvBlockEl = document.getElementById("csvImportBlock");
+
+        if (t === 3) {
+          // Включаем интерфейс CSV, прячем ручной ввод формы
+          if (cardFormEl) cardFormEl.classList.add("hidden");
+          if (csvBlockEl) csvBlockEl.classList.remove("hidden");
+        } else {
+          // Стандартные ручные режимы ФИО
+          if (cardFormEl) cardFormEl.classList.remove("hidden");
+          if (csvBlockEl) csvBlockEl.classList.add("hidden");
+          updatePatronymicState();
+        }
+        updatePreview();
+      }
+
+      // Обработчик чтения CSV файла
+      function handleCsvFileLoad() {
+        const fileInput = document.getElementById("csvFileInput");
+        if (!fileInput || !fileInput.files.length) return;
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+          const text = e.target.result;
+          parseCsvContent(text);
+        };
+
+        // Читаем в кодировке Windows-1251 для поддержки кириллицы из Excel/РФ-систем
+        reader.readAsText(file, "windows-1251");
+      }
+
+      // Обновленный парсер текста CSV под новые заголовки
+      function parseCsvContent(text) {
+        csvParsedEmployees = [];
+
+        // Разрезаем файл на строки и удаляем пустые символы
+        const lines = text.split(/\r?\n/).map((line) => line.trim());
+        if (lines.length < 2) return; // Файл пуст или содержит только шапку
+
+        // Автоопределение разделителя по первой строке (ищем чаще встречающийся: ; или ,)
+        const headerLine = lines[0];
+        const separator =
+          headerLine.split(";").length > headerLine.split(",").length
+            ? ";"
+            : ",";
+
+        // Читаем заголовки, очищая от кавычек, и переводим в нижний регистр для защиты от опечаток
+        const headers = headerLine.split(separator).map((h) =>
+          h
+            .replace(/^["']|["']$/g, "")
+            .trim()
+            .toLowerCase(),
+        );
+
+        // Находим индексы нужных нам колонок по их точным именам
+        const idxId = headers.indexOf("id");
+        const idxNameFull = headers.indexOf("name_full");
+        const idxLastName = headers.indexOf("second_name"); // Фамилия
+        const idxFirstName = headers.indexOf("first_name"); // Имя
+        const idxPatronymic = headers.indexOf("patronymic"); // Отчество
+        const idxDept = headers.indexOf("department");
+
+        // Бежим по строкам данных (пропуская строку заголовков с индексом 0)
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue; // Пропускаем абсолютно пустые строки
+
+          // Разбиваем ячейки и очищаем их от кавычек по краям
+          const cells = line
+            .split(separator)
+            .map((cell) => cell.replace(/^["']|["']$/g, "").trim());
+
+          // Извлекаем базовые значения (проверяя, что индекс колонки существует в файле)
+          let idValue = idxId !== -1 ? cells[idxId] || "" : "";
+          let deptValue = idxDept !== -1 ? cells[idxDept] || "" : "";
+
+          let ln = idxLastName !== -1 ? cells[idxLastName] || "" : "";
+          let fn = idxFirstName !== -1 ? cells[idxFirstName] || "" : "";
+          let pn = idxPatronymic !== -1 ? cells[idxPatronymic] || "" : "";
+
+          // ИНТЕЛЛЕКТУАЛЬНЫЙ СЛУЧАЙ: Если раздельные колонки пусты, но заполнена name_full
+          if (!ln && !fn && idxNameFull !== -1 && cells[idxNameFull]) {
+            const parts = cells[idxNameFull].trim().split(/\s+/);
+            ln = parts[0] || "";
+            fn = parts[1] || "";
+            pn = parts.slice(2).join(" ") || "";
+          }
+
+          // Сохраняем обработанного сотрудника в глобальный массив, если есть хотя бы Имя или Фамилия
+          if (ln || fn) {
+            csvParsedEmployees.push({
+              lastName: ln,
+              firstName: fn,
+              patronymic: pn,
+              department: deptValue,
+              idNumber: idValue,
+            });
+          }
+        }
+
+        // Запускаем перерисовку UI таблицы импорта с новыми данными
+        renderCsvTablePreview();
+
+        const zipInput = document.getElementById("zipFileInput");
+        const zipStatus = document.getElementById("zipStatusText");
+        if (zipInput && zipStatus && csvParsedEmployees.length > 0) {
+          zipInput.disabled = false;
+          zipStatus.innerText =
+            "Рекомендуется загрузить ZIP-архив с фото. Формат имён: ID_0000000001_photo.png";
+          zipStatus.className =
+            "text-[10px] text-indigo-600 mt-1 font-semibold";
+        }
+      }
+
+      // Отрисовка таблицы загруженных данных на экране
+      // Отрисовка таблицы загруженных данных на экране и проверка привязанных фото
+      function renderCsvTablePreview() {
+        const tbody = document.getElementById("csvPreviewTableBody");
+        const wrapper = document.getElementById("csvPreviewWrapper");
+        const btn = document.getElementById("startCsvBulkBtn");
+
+        if (!tbody || !wrapper || !btn) return;
+
+        // Полностью очищаем тело таблицы перед новой отрисовкой
+        tbody.innerHTML = "";
+
+        // Если данных нет, скрываем блок таблицы и блокируем кнопку запуска
+        if (csvParsedEmployees.length === 0) {
+          wrapper.classList.add("hidden");
+          btn.disabled = true;
+          btn.innerText = "Запустить генерацию (0 карт)";
+          btn.className =
+            "w-full bg-slate-300 text-slate-500 py-3 px-4 rounded-xl font-bold text-sm shadow-xs transition-all flex items-center justify-center";
+          return;
+        }
+
+        // Бежим по массиву распарсенных из CSV сотрудников и формируем строки таблицы
+        csvParsedEmployees.forEach((emp, index) => {
+          const row = document.createElement("tr");
+          row.className = "hover:bg-slate-50/80 transition-colors";
+
+          // Формируем полное имя сотрудника и приводим ID к строгому 10-значному виду с лидирующими нулями
+          const fullName =
+            `${emp.lastName} ${emp.firstName} ${emp.patronymic}`.trim();
+          const cleanId = emp.idNumber.replace(/\D/g, "").padStart(10, "0");
+
+          // Интеллектуальная проверка: есть ли для этого ID извлеченная из ZIP-архива фотография
+          const hasPhoto =
+            typeof csvPhotosObject !== "undefined" &&
+            !!csvPhotosObject[cleanId];
+
+          // Формируем красивый компактный бейдж статуса фотографии
+          const photoBadge = hasPhoto
+            ? `<span class="inline-block bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded-sm font-bold tracking-wide shrink-0">👤 ФОТО</span>`
+            : `<span class="inline-block bg-slate-100 text-slate-400 text-[9px] px-1.5 py-0.5 rounded-sm font-medium tracking-wide shrink-0">НЕТ ФОТО</span>`;
+
+          // Заполняем ячейки строки
+          row.innerHTML = `
+      <td class="py-1.5 px-2.5 text-center font-bold text-slate-400 border-r border-slate-100 bg-slate-50/30 tabular-nums">${index + 1}</td>
+      <td class="py-1.5 px-2 font-medium max-w-[150px]">
+        <div class="flex items-center justify-between gap-2">
+          <span class="truncate" title="${fullName}">${fullName || "—"}</span>
+          ${photoBadge}
+        </div>
+      </td>
+      <td class="py-1.5 px-2 text-slate-500 truncate max-w-[130px]" title="${emp.department || "—"}">${emp.department || "—"}</td>
+      <td class="py-1.5 px-2 text-right font-mono text-indigo-600 font-bold tabular-nums">${cleanId}</td>
+    `;
+          tbody.appendChild(row);
+        });
+
+        // Показываем контейнер с прокручиваемой таблицей оператору
+        wrapper.classList.remove("hidden");
+
+        // Логика управления главной кнопкой экспорта: проверяем, загружен ли фоновый макет ID-карты
+        const hasBg = !!uploadedImgBase64;
+        btn.disabled = !hasBg;
+
+        if (hasBg) {
+          // Если фон загружен — активируем яркую изумрудную кнопку старта генерации
+          btn.innerText = `Скачать пакет карт (${csvParsedEmployees.length} шт. PNG)`;
+          btn.className =
+            "w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-4 rounded-xl font-bold text-sm shadow-md cursor-pointer flex items-center justify-center transition-all animate-pulse";
+        } else {
+          // Если фона нет — выставляем предупреждающий статус, блокируя запуск до выполнения Шага 1 инструкции
+          btn.innerText = "Загрузите фоновый макет слева для разблокировки";
+          btn.className =
+            "w-full bg-amber-500 text-white py-3 px-4 rounded-xl font-bold text-sm shadow-md text-center pointer-events-none";
+        }
+      }
+
+      // Асинхронный цикл массовой конвейерной генерации карт из CSV и ZIP
+      function runCsvBulkGeneration() {
+        // Проверяем наличие распарсенных данных и обязательного фонового изображения
+        if (csvParsedEmployees.length === 0 || !uploadedImgBase64) return;
+
+        const btn = document.getElementById("startCsvBulkBtn");
+        if (btn) {
+          btn.disabled = true;
+          btn.className =
+            "w-full bg-slate-600 text-white py-3 px-4 rounded-xl font-bold text-sm shadow-md text-center pointer-events-none";
+        }
+
+        let currentIndex = 0;
+
+        // Внутренняя асинхронная функция конвейера
+        function processNextCard() {
+          // ПРОВЕРКА ЗАВЕРШЕНИЯ: Срабатывает только тогда, когда обработаны абсолютно все строки
+          if (currentIndex >= csvParsedEmployees.length) {
+            // ИСПРАВЛЕНО: Теперь alert вызывается строго ОДИН раз, когда currentIndex дошел до конца массива
+            alert(
+              `Пакетная обработка завершена! Успешно сгенерировано и сохранено карт: ${csvParsedEmployees.length} шт.`,
+            );
+
+            // Сбрасываем текстовые слои на карте превью к значениям по умолчанию после завершения работы
+            clearPhoto();
+            document.getElementById("lastName").value = "";
+            document.getElementById("firstName").value = "";
+            document.getElementById("patronymic").value = "";
+            document.getElementById("department").value = "";
+            document.getElementById("idNumber").value = "";
+
+            // Возвращаем таблицу импорта в исходное активное состояние
+            renderCsvTablePreview();
+            return;
+          }
+
+          const emp = csvParsedEmployees[currentIndex];
+          if (btn)
+            btn.innerText = `Обработка: ${currentIndex + 1} из ${csvParsedEmployees.length}...`;
+
+          // Принудительно очищаем спецсимволы и формируем строгий 10-значный ID с лидирующими нулями
+          let currentCleanId = emp.idNumber
+            .replace(/\D/g, "")
+            .padStart(10, "0");
+
+          // 1. Подставляем текстовые данные текущего сотрудника в скрытые поля формы
+          document.getElementById("lastName").value = emp.lastName;
+          document.getElementById("firstName").value = emp.firstName;
+          document.getElementById("patronymic").value = emp.patronymic;
+          document.getElementById("department").value = emp.department;
+          document.getElementById("idNumber").value = currentCleanId;
+
+          // 2. Интеллектуально определяем режим таба для отрисовки (скрывать отчество или нет)
+          currentTab = emp.patronymic.trim() === "" ? 2 : 1;
+
+          // 3. Автоматическая подстановка аватарки сотрудника из ZIP-архива по совпадению ID
+          if (
+            typeof csvPhotosObject !== "undefined" &&
+            csvPhotosObject[currentCleanId]
+          ) {
+            uploadedPhotoBase64 = csvPhotosObject[currentCleanId];
+            const container = document.getElementById("avatarContainer");
+            const img = document.getElementById("avatarImg");
+            if (container) container.style.display = "flex";
+            if (img) {
+              img.src = uploadedPhotoBase64;
+              img.classList.remove("hidden");
+            }
+          } else {
+            // Если личной фотографии для этого ID в ZIP не нашлось — очищаем аватар на превью
+            clearPhoto();
+          }
+
+          // 4. Синхронизируем общую текстовую строку ФИО для поля fullNameInput
+          document.getElementById("fullNameInput").value = [
+            emp.lastName,
+            emp.firstName,
+            emp.patronymic,
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          // 5. Перерисовываем DOM-структуру бейджа на экране текущими данными
+          updatePreview();
+
+          // 6. Задержка в 150мс: даем браузеру время отрендерить шрифты и Base64-аватарку перед снимком
+          setTimeout(() => {
+            const card = document.getElementById("resultCard");
+            const canvas = document.createElement("canvas");
+            canvas.width = 638;
+            canvas.height = 1016;
+
+            // ВРЕМЕННЫЙ СБРОС УГЛОВ: Убираем скругление перед созданием снимка для идеального печатного макета
+            if (card) card.style.borderRadius = "0px";
+
+            html2canvas(card, {
+              scale: 3,
+              canvas: canvas,
+              backgroundColor: "#ffffff",
+              width: 212.7,
+              height: 338.7,
+              useCORS: true,
+              allowTaint: true,
+              logging: false,
+            }).then((c) => {
+              // МОМЕНТАЛЬНЫЙ ВОЗВРАТ УГЛОВ: Возвращаем скругление 6px в окне предпросмотра
+              if (card) card.style.borderRadius = "6px";
+
+              // Функция для приведения строк к формату "С заглавной буквы" (например: Мамин-Сибиряк)
+              const capitalize = (str) => {
+                if (!str) return "";
+                return str
+                  .trim()
+                  .toLowerCase()
+                  .split("-")
+                  .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                  .join("-");
+              };
+
+              let ln = capitalize(emp.lastName);
+              let fn = capitalize(emp.firstName);
+              let pn = capitalize(emp.patronymic);
+
+              // 7. Собираем имя итогового файла по вашему корпоративному стандарту
+              let filename = `ID_${currentCleanId}__${ln}_${fn}`;
+              if (currentTab !== 2 && pn !== "") filename += `_${pn}`;
+
+              // 8. Получаем финальный Base64 с 300 DPI
+              const processedBase64 = changePngDpi(
+                c.toDataURL("image/png", 1.0),
+                300,
+              );
+
+              // Проверяем, выбрал ли пользователь свою папку через кнопку "Сохранить в..."
+              if (
+                typeof customDirectoryHandle !== "undefined" &&
+                customDirectoryHandle
+              ) {
+                // Запускаем асинхронную скрытую запись файла прямо в выбранную папку
+                saveFileToCustomDirectory(processedBase64, filename + ".png")
+                  .then(() => continuePipeline())
+                  .catch(() => {
+                    // Резервный вариант, если запись сорвалась из-за прав доступа
+                    fallbackBrowserDownload(processedBase64, filename + ".png");
+                    continuePipeline();
+                  });
+              } else {
+                // Обычное скачивание в "Загрузки" браузера
+                fallbackBrowserDownload(processedBase64, filename + ".png");
+                continuePipeline();
+              }
+
+              // Вынесли переход к следующему шагу в отдельную подфункцию
+              function continuePipeline() {
+                const shouldSave = document.getElementById(
+                  "saveToHistoryCheckbox",
+                );
+                if (shouldSave && shouldSave.checked) {
+                  saveToHistory();
+                }
+                // Переходим к следующему сотруднику в очереди
+                currentIndex++;
+                processNextCard();
+              }
+            });
+          }, 150); // Микропауза для стабильной фиксации canvas
+        }
+
+        // Запуск потокового конвейера
+        processNextCard();
+      }
+
+      function handleZipFileLoad() {
+        const zipInput = document.getElementById("zipFileInput");
+        const zipStatus = document.getElementById("zipStatusText");
+        if (!zipInput || !zipInput.files.length) return;
+
+        zipStatus.innerText =
+          "Распаковка и чтение фотографий, пожалуйста, подождите...";
+        zipStatus.className =
+          "text-[10px] text-amber-600 mt-1 font-semibold animate-pulse";
+
+        csvPhotosObject = {}; // Обнуляем старый кэш картинок
+        const file = zipInput.files[0];
+        const zip = new JSZip();
+
+        zip
+          .loadAsync(file)
+          .then(function (contents) {
+            const promises = [];
+
+            // Бежим по всем файлам внутри ZIP-архива
+            Object.keys(contents.files).forEach(function (filename) {
+              const zipEntry = contents.files[filename];
+              if (zipEntry.dir) return; // Пропускаем папки
+
+              // Извлекаем только имя файла без путей (на случай, если файлы внутри папки)
+              const shortName = filename.split("/").pop();
+
+              // Регулярное выражение ищет формат: ID_0000000000_photo.png или .jpg
+              const match = shortName.match(
+                /^ID_(\d{10})_photo\.(png|jpg|jpeg)$/i,
+              );
+
+              if (match) {
+                const employeeId = match[1]; // Получаем очищенный 10-значный ID
+
+                // Читаем файл как бинарный массив данных
+                const promise = zipEntry
+                  .async("base64")
+                  .then(function (base64Data) {
+                    let mimeType = "image/png";
+                    if (
+                      shortName.toLowerCase().endsWith(".jpg") ||
+                      shortName.toLowerCase().endsWith(".jpeg")
+                    ) {
+                      mimeType = "image/jpeg";
+                    }
+                    // Сохраняем готовую строку Base64 под ключом ID сотрудника
+                    csvPhotosObject[employeeId] =
+                      `data:${mimeType};base64,${base64Data}`;
+                  });
+                promises.push(promise);
+              }
+            });
+
+            // Когда все файлы из архива обработаны, обновляем интерфейс
+            Promise.all(promises).then(function () {
+              const count = Object.keys(csvPhotosObject).length;
+              zipStatus.innerText = `Успешно привязано фотографий: ${count} шт.`;
+              zipStatus.className =
+                "text-[10px] text-emerald-600 mt-1 font-bold";
+
+              // Перерисовываем таблицу импорта, чтобы показать значки наличия фоток
+              renderCsvTablePreview();
+            });
+          })
+          .catch(function (err) {
+            zipStatus.innerText =
+              "Ошибка чтения ZIP-архива. Убедитесь, что файл не поврежден.";
+            zipStatus.className = "text-[10px] text-red-600 mt-1 font-bold";
+          });
+      }
+
+      // Асинхронный запрос доступа к папке на компьютере
+      async function selectTargetDirectory() {
+        const statusTxt = document.getElementById("dirStatusText");
+        try {
+          // Вызываем системное окно выбора директории
+          customDirectoryHandle = await window.showDirectoryPicker({
+            mode: "readwrite",
+          });
+
+          if (statusTxt && customDirectoryHandle) {
+            statusTxt.innerText = `Папка: ${customDirectoryHandle.name}`;
+            statusTxt.className =
+              "text-[10px] text-emerald-600 font-bold not-italic";
+          }
+        } catch (err) {
+          // Если пользователь закрыл окно или браузер не поддерживает API
+          customDirectoryHandle = null;
+          if (statusTxt) {
+            statusTxt.innerText = 'По умолчанию: папка "Загрузки"';
+            statusTxt.className =
+              "text-[10px] text-slate-400 font-medium italic";
+          }
+        }
+      }
+
+      // Функция прямой скрытой записи файла в выбранную папку на компьютере
+      async function saveFileToCustomDirectory(base64Data, fullFilename) {
+        // Превращаем Base64 обратно в бинарный массив (Blob)
+        const parts = base64Data.split(",");
+        const byteString = atob(parts[1]);
+        const arrayBuffer = new ArrayBuffer(byteString.length);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < byteString.length; i++) {
+          uint8Array[i] = byteString.charCodeAt(i);
+        }
+        const fileBlob = new Blob([arrayBuffer], { type: "image/png" });
+
+        // Создаем файл внутри выбранной папки
+        const fileHandle = await customDirectoryHandle.getFileHandle(
+          fullFilename,
+          { create: true },
+        );
+        // Открываем поток записи и сохраняем Blob данных
+        const writableStream = await fileHandle.createWritable();
+        await writableStream.write(fileBlob);
+        await writableStream.close();
+      }
+
+      // Стандартный резервный экспорт через загрузки браузера
+      function fallbackBrowserDownload(base64Data, fullFilename) {
+        const link = document.createElement("a");
+        link.download = fullFilename;
+        link.href = base64Data;
+        link.click();
+      }
+    </script>
+    <!-- ФИКСИРОВАННАЯ КНОПКА И ВЫЕЗЖАЮЩАЯ ПАНЕЛЬ ИНСТРУКЦИИ -->
+    <div class="fixed top-4 right-4 z-50">
+      <!-- Кнопка вызова -->
+      <button
+        type="button"
+        onclick="toggleManualPanel(true)"
+        class="w-10 h-10 bg-white hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-xl flex items-center justify-center border border-[#e2e8f0] hover:border-indigo-200 shadow-md transition-all cursor-pointer group/btn relative focus:outline-hidden"
+      >
+        <!-- Тултип -->
+        <div
+          class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs py-1.5 px-3 rounded-lg opacity-0 pointer-events-none group-hover/btn:opacity-100 transition-opacity whitespace-nowrap shadow-md font-medium"
+        >
+          Инструкция пользователя
+        </div>
+        <!-- Укрупненный знак вопроса без круга -->
+        <svg
+          xmlns="http://w3.org"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2.5"
+          stroke="currentColor"
+          class="w-5.5 h-5.5 transition-transform duration-200 group-hover/btn:scale-105"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 17.25h.008v.008H12v-.008Z"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Задний затемняющий фон (Overlay) -->
+    <div
+      id="manualOverlay"
+      onclick="toggleManualPanel(false)"
+      class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 hidden opacity-0 transition-opacity duration-300"
+    ></div>
+
+    <!-- Сама боковая панель -->
+    <div
+      id="manualPanel"
+      class="fixed top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl border-l border-[#e2e8f0] z-50 translate-x-full transition-transform duration-300 flex flex-col"
+    >
+      <!-- Шапка панели -->
+      <div
+        class="p-4 border-b border-[#e2e8f0] flex items-center justify-between bg-slate-50"
+      >
+        <div class="flex flex-col">
+          <h3 class="font-bold text-sm text-[#0f172a]">
+            Инструкция пользователя
+          </h3>
+          <span
+            class="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-0.5"
+            >Приложение v1.3.10</span
+          >
+        </div>
+        <button
+          type="button"
+          onclick="toggleManualPanel(false)"
+          class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer text-sm font-bold"
+        >
+          ✕
+        </button>
+      </div>
+
+      <!-- Контент панели (скроллящийся) -->
+      <div
+        class="p-5 overflow-y-auto flex-1 text-xs text-[#334155] space-y-5 leading-relaxed"
+      >
+        <div>
+          <h4 class="font-bold text-sm text-[#0f172a] mb-1">
+            Порядок работы с программой
+          </h4>
+          <p>
+            Приложение предназначено для быстрого создания и подготовки к печати
+            профессиональных ID-карт сотрудников компании Midea (MBY). Генерация
+            выполняется за четыре последовательных шага.
+          </p>
+        </div>
+
+        <ul class="list-disc pl-4 space-y-2.5">
+          <li>
+            <span class="font-bold text-[#0f172a]"
+              >Шаг 1. Загрузка макета:</span
+            >
+            Кликните по кнопке «Выберите файл» в блоке «Фоновое изображение» и
+            укажите шаблон карты. Макет мгновенно появится в зоне превью.
+          </li>
+          <li>
+            <span class="font-bold text-[#0f172a]">Шаг 2. Формат ФИО:</span> В
+            режиме «ФИО полностью» данные пишутся в одну строку через пробел. В
+            режиме «Без отчества» графа отчества скрывается, а Фамилия и Имя
+            автоматически сдвигаются ниже для сохранения баланса.
+          </li>
+          <li>
+            <span class="font-bold text-[#0f172a]"
+              >Шаг 3. Подразделение, ID и Фото:</span
+            >
+            Выберите нужный «Отдел» из выпадающего списка и укажите цифровой ID.
+            При необходимости активируйте чекбокс
+            <span class="font-bold">«Добавить фото сотрудника»</span>. Программа
+            откроет всплывающий редактор, который позволит идеально кадрировать
+            снимок под стандартные пропорции карты. При восстановлении карточки
+            из истории специальный индикатор покажет имя ранее привязанного
+            файла.
+            <div class="p-2 bg-indigo-100 text-indigo-800 rounded-md">
+              В случае необходимости добавления или изменения какой-либо
+              информации (например, в выпадающем списке "Отдел"), свяжитесь,
+              пожалуйста с разработчиком приложения.
+            </div>
+          </li>
+          <li>
+            <span class="font-bold text-[#0f172a]">Шаг 4. Экспорт:</span> При
+            заполнении обязательных полей нижняя кнопка станет фиолетовой.
+            Нажмите «Скачать ID-карту (PNG)», чтобы сохранить файл в печатном
+            качестве 300 DPI со строгим автоматическим приведением регистра букв
+            к правильному виду. Фотография экспортируется с тройной плотностью
+            пикселей для идеальной четкости лица на печати.
+          </li>
+        </ul>
+
+        <div
+          class="p-3.5 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl space-y-2"
+        >
+          <h4 class="font-bold text-[13px] text-[#0f172a]">
+            Правила переноса в Microsoft Word (.DOCX)
+          </h4>
+          <p>
+            Чтобы при выгрузке на печать из Word карточка сотрудника сохраняла
+            свои точные физические размеры и не размывалась, используйте
+            встроенные инструменты импорта:
+          </p>
+          <ol class="list-decimal pl-4 space-y-1.5 mt-1 font-medium">
+            <li>
+              Откройте Word, перейдите во вкладку
+              <span class="font-bold">«Вставка»</span> ➔
+              <span class="font-bold">«Рисунки»</span> ➔
+              <span class="font-bold">«Это устройство»</span> и укажите
+              скачанную карту PNG.
+            </li>
+            <li>
+              Кликните правой кнопкой мыши по изображению и выберите пункт
+              <span class="font-bold">«Размер и положение...»</span>.
+            </li>
+            <li>
+              Во вкладке <span class="font-bold">Размер</span> убедитесь, что
+              масштаб по ширине и высоте зафиксирован строго на
+              <span class="font-bold">100%</span>. Вшитые в код метаданные 300
+              DPI автоматически установят точные размеры карточки на листе:
+              <span class="font-bold">5.4 см в ширину и 8.6 см в высоту</span>
+              (стандарт пластиковых карт ISO 7810 ID-1).
+            </li>
+            <li>
+              Во вкладке
+              <span class="font-bold">Обтекание текстом</span> задайте режим
+              <span class="font-bold">«Перед текстом»</span> для свободного
+              перемещения пропуска мышкой по странице.
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО ОБРЕЗКИ ФОТО (CROPPER) -->
+    <div
+      id="cropModal"
+      class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden opacity-0 transition-opacity duration-300 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden flex flex-col scale-95 transition-transform duration-300"
+      >
+        <!-- Шапка модалки -->
+        <div
+          class="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between"
+        >
+          <h3 class="font-bold text-sm text-slate-800">
+            Кадрирование фотографии
+          </h3>
+          <button
+            type="button"
+            onclick="closeCropModal()"
+            class="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
+          >
+            ✕
+          </button>
+        </div>
+        <!-- Зона кадрирования (Очищена от статической маски) -->
+        <div
+          class="p-4 bg-slate-900 flex items-center justify-center"
+          style="max-height: 350px; min-height: 250px"
+        >
+          <img
+            id="cropImageTarget"
+            src=""
+            class="max-w-full max-h-full block"
+          />
+        </div>
+
+        <!-- Кнопки управления -->
+        <div
+          class="p-4 border-t border-slate-100 flex gap-3 justify-end bg-slate-50"
+        >
+          <button
+            type="button"
+            onclick="closeCropModal()"
+            class="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-200/60 border border-slate-200 rounded-xl cursor-pointer transition-all"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onclick="applyPhotoCrop()"
+            class="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md rounded-xl cursor-pointer transition-all"
+          >
+            Применить обрезку
+          </button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
